@@ -1,6 +1,8 @@
 # Local config (contains API keys, do not commit)
-llmgateway.toml
+llmgate.toml
+TODO.md 
 
 # Build artifacts
 /bin/
 /dist/
+*.so

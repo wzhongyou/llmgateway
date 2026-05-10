@@ -1,5 +1,5 @@
 # Minimal config for the gateway example binary.
-# For development/testing, use the main llmgateway.toml in the project root.
+# For development/testing, use the main llmgate.toml in the project root.
 # Usage: go run main.go gateway.toml
 
 [[providers]]

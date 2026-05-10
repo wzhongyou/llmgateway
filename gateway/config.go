@@ -6,7 +6,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/wzhongyou/llmgateway/core"
+	"github.com/wzhongyou/llmgate/core"
 )
 
 func LoadConfig(path string) (*core.GatewayConfig, error) {

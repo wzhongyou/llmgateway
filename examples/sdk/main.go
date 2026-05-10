@@ -4,34 +4,34 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wzhongyou/llmgateway"
+	"github.com/wzhongyou/llmgate"
 
 	// Register built-in providers
-	_ "github.com/wzhongyou/llmgateway/core/providers/anthropic"
-	_ "github.com/wzhongyou/llmgateway/core/providers/deepseek"
-	_ "github.com/wzhongyou/llmgateway/core/providers/ernie"
-	_ "github.com/wzhongyou/llmgateway/core/providers/gemini"
-	_ "github.com/wzhongyou/llmgateway/core/providers/glm"
-	_ "github.com/wzhongyou/llmgateway/core/providers/grok"
-	_ "github.com/wzhongyou/llmgateway/core/providers/hunyuan"
-	_ "github.com/wzhongyou/llmgateway/core/providers/kimi"
-	_ "github.com/wzhongyou/llmgateway/core/providers/llama"
-	_ "github.com/wzhongyou/llmgateway/core/providers/mimo"
-	_ "github.com/wzhongyou/llmgateway/core/providers/minimax"
-	_ "github.com/wzhongyou/llmgateway/core/providers/openai"
-	_ "github.com/wzhongyou/llmgateway/core/providers/qwen"
-	_ "github.com/wzhongyou/llmgateway/core/providers/stepfun"
+	_ "github.com/wzhongyou/llmgate/core/providers/anthropic"
+	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
+	_ "github.com/wzhongyou/llmgate/core/providers/ernie"
+	_ "github.com/wzhongyou/llmgate/core/providers/gemini"
+	_ "github.com/wzhongyou/llmgate/core/providers/glm"
+	_ "github.com/wzhongyou/llmgate/core/providers/grok"
+	_ "github.com/wzhongyou/llmgate/core/providers/hunyuan"
+	_ "github.com/wzhongyou/llmgate/core/providers/kimi"
+	_ "github.com/wzhongyou/llmgate/core/providers/llama"
+	_ "github.com/wzhongyou/llmgate/core/providers/mimo"
+	_ "github.com/wzhongyou/llmgate/core/providers/minimax"
+	_ "github.com/wzhongyou/llmgate/core/providers/openai"
+	_ "github.com/wzhongyou/llmgate/core/providers/qwen"
+	_ "github.com/wzhongyou/llmgate/core/providers/stepfun"
 )
 
 func main() {
-	// New() auto-loads from llmgateway.toml or env vars (DEEPSEEK_KEY, etc.)
-	gw := llmgateway.New()
+	// New() auto-loads from llmgate.toml or env vars (DEEPSEEK_KEY, etc.)
+	gw := llmgate.New()
 
 	providers := gw.ProviderNames()
 	if len(providers) == 0 {
 		fmt.Println("No provider configured.")
 		fmt.Println("Options:")
-		fmt.Println("  1. cp llmgateway.toml.example llmgateway.toml  (then fill in keys)")
+		fmt.Println("  1. cp llmgate.toml.example llmgate.toml  (then fill in keys)")
 		fmt.Println("  2. export GLM_KEY=xxx / MINIMAX_KEY=xxx / DEEPSEEK_KEY=xxx")
 		fmt.Println("  3. call gw.Use(\"glm\", \"your-key\") in code")
 		return
@@ -40,8 +40,8 @@ func main() {
 	fmt.Printf("Loaded providers: %v\n", providers)
 
 	ctx := context.Background()
-	req := &llmgateway.ChatRequest{
-		Messages: []llmgateway.Message{
+	req := &llmgate.ChatRequest{
+		Messages: []llmgate.Message{
 			{Role: "user", Content: "Hello, how are you?"},
 		},
 	}

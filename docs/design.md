@@ -1,9 +1,9 @@
-# llmgateway Design
+# llmgate Design
 
 ## Directory Structure
 
 ```
-llmgateway/
+llmgate/
 ├── core/                 # Core: provider interface, engine, strategies, metrics
 │   ├── types.go          # ChatRequest, ChatResponse, Message, Usage
 │   ├── provider.go       # Provider interface
@@ -34,7 +34,7 @@ llmgateway/
 ├── gateway/              # HTTP server wrapping core
 │   ├── server.go         # HTTP handlers, middleware, structured logging
 │   └── config.go         # TOML config loader
-├── llmgateway.go         # Top-level type aliases + New()
+├── llmgate.go         # Top-level type aliases + New()
 ├── examples/             # Usage examples
 │   ├── sdk/              # SDK example
 │   └── gateway/          # Standalone gateway example
@@ -200,7 +200,7 @@ The engine records per-provider metrics (success/failure, latency) on every call
 ## SDK API
 
 ```go
-gw := llmgateway.New()       // auto-loads llmgateway.toml or env vars
+gw := llmgate.New()       // auto-loads llmgate.toml or env vars
 gw.Use("deepseek", "...")    // manual registration
 gw.With("anthropic")         // pin to provider
 gw.Fallback("a", "b")        // explicit chain
@@ -209,7 +209,7 @@ gw.UseStrategy(&MyStrategy{}) // custom strategy
 
 **Auto-load behavior** (`sdk/gateway.go`):
 
-1. Read `llmgateway.toml` from CWD (TOML format, with `${ENV}` expansion)
+1. Read `llmgate.toml` from CWD (TOML format, with `${ENV}` expansion)
 2. Fallback: scan env vars (`ANTHROPIC_KEY`, `DEEPSEEK_KEY`, `ERNIE_KEY`, `GEMINI_KEY`, `GLM_KEY`, `GROK_KEY`, `HUNYUAN_KEY`, `KIMI_KEY`, `LLAMA_KEY`, `MIMO_KEY`, `MINIMAX_KEY`, `OPENAI_KEY`, `QWEN_KEY`, `STEPFUN_KEY`)
 3. If neither found, gateway starts empty — user calls `gw.Use()` manually
 

@@ -1,4 +1,4 @@
-# Contributing to llmgateway
+# Contributing to llmgate
 
 Thanks for your interest in contributing! The easiest way to contribute is adding a new provider adapter.
 
@@ -7,8 +7,8 @@ Thanks for your interest in contributing! The easiest way to contribute is addin
 ## Getting Started
 
 ```bash
-git clone https://github.com/wzhongyou/llmgateway.git
-cd llmgateway
+git clone https://github.com/wzhongyou/llmgate.git
+cd llmgate
 
 # Run integration tests (requires a provider key)
 cp testconfig.toml.example testconfig.toml

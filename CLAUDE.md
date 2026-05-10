@@ -24,7 +24,7 @@ Violations of the zero-logging rule in `core/` or `sdk/` are bugs, not style iss
 
 ## What NOT to do
 
-- Do not add a `testutil` package or any shared test helper package — tests use `llmgateway.New()` + `gw.Engine().GetProvider()` directly
+- Do not add a `testutil` package or any shared test helper package — tests use `llmgate.New()` + `gw.Engine().GetProvider()` directly
 - Do not hardcode provider names in tests — use `providers[0]` or check with `GetProvider()`
 - Do not add `init()` auto-imports anywhere except inside each provider's own package
 - Do not add comments that explain what the code does — only add one if the WHY is non-obvious
@@ -38,13 +38,13 @@ Violations of the zero-logging rule in `core/` or `sdk/` are bugs, not style iss
 Integration tests skip automatically — no key, no test, no fail:
 
 ```go
-gw := llmgateway.New()  // auto-loads llmgateway.toml or env vars
+gw := llmgate.New()  // auto-loads llmgate.toml or env vars
 if _, ok := gw.Engine().GetProvider("glm"); !ok {
     t.Skip("glm not configured")
 }
 ```
 
-Config for tests: copy `llmgateway.toml.example` → `llmgateway.toml` and fill in keys, or set env vars. No separate test config file.
+Config for tests: copy `llmgate.toml.example` → `llmgate.toml` and fill in keys, or set env vars. No separate test config file.
 
 ---
 

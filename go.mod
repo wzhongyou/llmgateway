@@ -1,4 +1,4 @@
-module github.com/wzhongyou/llmgateway
+module github.com/wzhongyou/llmgate
 
 go 1.25.7
 

@@ -7,7 +7,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/wzhongyou/llmgateway/core"
+	"github.com/wzhongyou/llmgate/core"
 )
 
 type Gateway struct {
@@ -25,8 +25,8 @@ func New() *Gateway {
 }
 
 func (g *Gateway) autoLoad() {
-	// 1. Try llmgateway.toml in CWD
-	if data, err := os.ReadFile("llmgateway.toml"); err == nil {
+	// 1. Try llmgate.toml in CWD
+	if data, err := os.ReadFile("llmgate.toml"); err == nil {
 		var cfg core.GatewayConfig
 		if err := toml.Unmarshal(data, &cfg); err == nil {
 			cfg.ApplyEnv()

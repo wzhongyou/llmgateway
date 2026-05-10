@@ -1,4 +1,4 @@
-# llmgateway
+# llmgate
 
 > LLM infrastructure layer for Go agent applications
 
@@ -17,7 +17,7 @@ You're building agent applications and need to integrate multiple LLMs. Three re
 - **When things go wrong, you don't know why** — is the model slow? Rate limited? Token budget exceeded?
 - **Token usage is opaque** — mixing multiple providers, input/output/reasoning breakdowns don't add up
 
-**llmgateway** addresses this: a unified interface that hides provider differences, white-box logging of provider / model / token breakdown / latency on every call, built-in fallback and latency-limit strategies, laying the groundwork for visual monitoring.
+**llmgate** addresses this: a unified interface that hides provider differences, white-box logging of provider / model / token breakdown / latency on every call, built-in fallback and latency-limit strategies, laying the groundwork for visual monitoring.
 
 **Three usage modes — pick what fits:**
 
@@ -32,7 +32,7 @@ You're building agent applications and need to integrate multiple LLMs. Three re
 ## Quick Start
 
 ```bash
-go get github.com/wzhongyou/llmgateway
+go get github.com/wzhongyou/llmgate
 ```
 
 **Pick one of three ways to configure:**
@@ -40,7 +40,7 @@ go get github.com/wzhongyou/llmgateway
 **Option 1 — Config file (recommended)**
 
 ```bash
-cp llmgateway.toml.example llmgateway.toml
+cp llmgate.toml.example llmgate.toml
 # edit the key field
 ```
 
@@ -67,20 +67,20 @@ import (
     "context"
     "fmt"
 
-    "github.com/wzhongyou/llmgateway"
+    "github.com/wzhongyou/llmgate"
 
     // Register built-in providers
-    _ "github.com/wzhongyou/llmgateway/core/providers/deepseek"
-    _ "github.com/wzhongyou/llmgateway/core/providers/glm"
+    _ "github.com/wzhongyou/llmgate/core/providers/deepseek"
+    _ "github.com/wzhongyou/llmgate/core/providers/glm"
 )
 
 func main() {
-    // Auto-loads from llmgateway.toml or env vars
-    gw := llmgateway.New()
+    // Auto-loads from llmgate.toml or env vars
+    gw := llmgate.New()
 
     ctx := context.Background()
-    reply, err := gw.Chat(ctx, &llmgateway.ChatRequest{
-        Messages: []llmgateway.Message{
+    reply, err := gw.Chat(ctx, &llmgate.ChatRequest{
+        Messages: []llmgate.Message{
             {Role: "user", Content: "Write a Go HTTP server"},
         },
     })
@@ -96,7 +96,7 @@ func main() {
 ## API
 
 ```go
-gw := llmgateway.New()
+gw := llmgate.New()
 
 // Register providers
 gw.Use("deepseek", "sk-xxx")
@@ -120,7 +120,7 @@ fmt.Printf("DeepSeek latency: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyM
 1. `.Fallback(...)` — explicit in-code chain
 2. `.With(...)` — pin to a provider
 3. `UseStrategy(...)` — custom strategy
-4. Auto-detect (llmgateway.toml → env vars → code)
+4. Auto-detect (llmgate.toml → env vars → code)
 
 ---
 
@@ -129,12 +129,12 @@ fmt.Printf("DeepSeek latency: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyM
 Standalone HTTP server for multi-language access:
 
 ```bash
-cp llmgateway.toml.example llmgateway.toml
+cp llmgate.toml.example llmgate.toml
 go run examples/gateway/main.go
 ```
 
 ```toml
-# llmgateway.toml
+# llmgate.toml
 [[providers]]
 name = "glm"
 key = "${GLM_KEY}"
@@ -211,7 +211,7 @@ All providers support `base_url` override for proxies, private deployments, or t
 ## Project Structure
 
 ```
-llmgateway/
+llmgate/
 ├── core/        # Provider interface, engine, strategies, metrics
 ├── sdk/         # Go SDK
 ├── gateway/     # HTTP server
@@ -225,7 +225,7 @@ llmgateway/
 
 ```bash
 # 1. Configure your keys
-cp llmgateway.toml.example llmgateway.toml
+cp llmgate.toml.example llmgate.toml
 # Fill in real keys, or set env vars:
 # export GLM_KEY=xxx  MINIMAX_KEY=xxx  DEEPSEEK_KEY=xxx
 

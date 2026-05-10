@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wzhongyou/llmgateway/core"
+	"github.com/wzhongyou/llmgate/core"
 )
 
 const defaultBaseURL = "https://api.deepseek.com/v1"

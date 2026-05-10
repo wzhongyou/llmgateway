@@ -9,10 +9,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/wzhongyou/llmgateway/core"
-	"github.com/wzhongyou/llmgateway/gateway"
+	"github.com/wzhongyou/llmgate/core"
+	"github.com/wzhongyou/llmgate/gateway"
 
-	_ "github.com/wzhongyou/llmgateway/core/providers/deepseek"
+	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
 )
 
 func newGatewayServer(t *testing.T) *httptest.Server {

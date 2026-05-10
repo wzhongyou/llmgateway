@@ -1,8 +1,8 @@
-package llmgateway
+package llmgate
 
 import (
-	"github.com/wzhongyou/llmgateway/core"
-	"github.com/wzhongyou/llmgateway/sdk"
+	"github.com/wzhongyou/llmgate/core"
+	"github.com/wzhongyou/llmgate/sdk"
 )
 
 type Gateway = sdk.Gateway

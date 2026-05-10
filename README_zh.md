@@ -1,4 +1,4 @@
-# llmgateway
+# llmgate
 
 > Go 智能体应用的 LLM 基础设施层
 
@@ -17,7 +17,7 @@
 - **出了问题不知道为什么** — 是模型慢？被限速？还是 token 超出预算？
 - **Token 用量不透明** — 多个 provider 混用，输入/输出/推理 token 各自消耗对不上
 
-**llmgateway** 的做法：统一接口屏蔽差异，每次调用白盒记录 provider / 模型 / token 明细 / 延迟，内置降级和延迟限制策略，为可视化监控铺路。
+**llmgate** 的做法：统一接口屏蔽差异，每次调用白盒记录 provider / 模型 / token 明细 / 延迟，内置降级和延迟限制策略，为可视化监控铺路。
 
 **三种使用形态，按需选择：**
 
@@ -32,7 +32,7 @@
 ## 快速开始
 
 ```bash
-go get github.com/wzhongyou/llmgateway
+go get github.com/wzhongyou/llmgate
 ```
 
 **三种配置方式任选其一：**
@@ -40,7 +40,7 @@ go get github.com/wzhongyou/llmgateway
 **方式一 — 配置文件（推荐）**
 
 ```bash
-cp llmgateway.toml.example llmgateway.toml
+cp llmgate.toml.example llmgate.toml
 # 编辑 key 字段
 ```
 
@@ -67,20 +67,20 @@ import (
     "context"
     "fmt"
 
-    "github.com/wzhongyou/llmgateway"
+    "github.com/wzhongyou/llmgate"
 
     // 注册内置 provider
-    _ "github.com/wzhongyou/llmgateway/core/providers/deepseek"
-    _ "github.com/wzhongyou/llmgateway/core/providers/glm"
+    _ "github.com/wzhongyou/llmgate/core/providers/deepseek"
+    _ "github.com/wzhongyou/llmgate/core/providers/glm"
 )
 
 func main() {
-    // 自动从 llmgateway.toml 或环境变量加载配置
-    gw := llmgateway.New()
+    // 自动从 llmgate.toml 或环境变量加载配置
+    gw := llmgate.New()
 
     ctx := context.Background()
-    reply, err := gw.Chat(ctx, &llmgateway.ChatRequest{
-        Messages: []llmgateway.Message{
+    reply, err := gw.Chat(ctx, &llmgate.ChatRequest{
+        Messages: []llmgate.Message{
             {Role: "user", Content: "帮我写一个 Go HTTP server"},
         },
     })
@@ -96,7 +96,7 @@ func main() {
 ## API
 
 ```go
-gw := llmgateway.New()
+gw := llmgate.New()
 
 // 注册 provider
 gw.Use("deepseek", "sk-xxx")
@@ -120,7 +120,7 @@ fmt.Printf("DeepSeek 延迟: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs
 1. `.Fallback(...)` — 代码中显式指定降级链
 2. `.With(...)` — 固定使用某个 provider
 3. `UseStrategy(...)` — 自定义策略
-4. 自动检测（llmgateway.toml → 环境变量 → 代码）
+4. 自动检测（llmgate.toml → 环境变量 → 代码）
 
 ---
 
@@ -129,12 +129,12 @@ fmt.Printf("DeepSeek 延迟: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs
 独立部署 HTTP 服务，多语言接入：
 
 ```bash
-cp llmgateway.toml.example llmgateway.toml
+cp llmgate.toml.example llmgate.toml
 go run examples/gateway/main.go
 ```
 
 ```toml
-# llmgateway.toml
+# llmgate.toml
 [[providers]]
 name = "glm"
 key = "${GLM_KEY}"
@@ -211,7 +211,7 @@ srv, _ := gateway.New(cfg, gateway.WithLogger(logger))
 ## 项目结构
 
 ```
-llmgateway/
+llmgate/
 ├── core/                 # Provider 接口、引擎、策略、指标
 ├── sdk/                  # Go SDK
 ├── gateway/              # HTTP 服务
@@ -225,7 +225,7 @@ llmgateway/
 
 ```bash
 # 1. 配置 key
-cp llmgateway.toml.example llmgateway.toml
+cp llmgate.toml.example llmgate.toml
 # 填入真实 key，或直接设置环境变量：
 # export GLM_KEY=xxx  MINIMAX_KEY=xxx  DEEPSEEK_KEY=xxx
 

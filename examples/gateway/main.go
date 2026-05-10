@@ -7,32 +7,32 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/wzhongyou/llmgateway/gateway"
+	"github.com/wzhongyou/llmgate/gateway"
 
 	// Register built-in providers
-	_ "github.com/wzhongyou/llmgateway/core/providers/anthropic"
-	_ "github.com/wzhongyou/llmgateway/core/providers/deepseek"
-	_ "github.com/wzhongyou/llmgateway/core/providers/ernie"
-	_ "github.com/wzhongyou/llmgateway/core/providers/gemini"
-	_ "github.com/wzhongyou/llmgateway/core/providers/glm"
-	_ "github.com/wzhongyou/llmgateway/core/providers/grok"
-	_ "github.com/wzhongyou/llmgateway/core/providers/hunyuan"
-	_ "github.com/wzhongyou/llmgateway/core/providers/kimi"
-	_ "github.com/wzhongyou/llmgateway/core/providers/llama"
-	_ "github.com/wzhongyou/llmgateway/core/providers/mimo"
-	_ "github.com/wzhongyou/llmgateway/core/providers/minimax"
-	_ "github.com/wzhongyou/llmgateway/core/providers/openai"
-	_ "github.com/wzhongyou/llmgateway/core/providers/qwen"
-	_ "github.com/wzhongyou/llmgateway/core/providers/stepfun"
+	_ "github.com/wzhongyou/llmgate/core/providers/anthropic"
+	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
+	_ "github.com/wzhongyou/llmgate/core/providers/ernie"
+	_ "github.com/wzhongyou/llmgate/core/providers/gemini"
+	_ "github.com/wzhongyou/llmgate/core/providers/glm"
+	_ "github.com/wzhongyou/llmgate/core/providers/grok"
+	_ "github.com/wzhongyou/llmgate/core/providers/hunyuan"
+	_ "github.com/wzhongyou/llmgate/core/providers/kimi"
+	_ "github.com/wzhongyou/llmgate/core/providers/llama"
+	_ "github.com/wzhongyou/llmgate/core/providers/mimo"
+	_ "github.com/wzhongyou/llmgate/core/providers/minimax"
+	_ "github.com/wzhongyou/llmgate/core/providers/openai"
+	_ "github.com/wzhongyou/llmgate/core/providers/qwen"
+	_ "github.com/wzhongyou/llmgate/core/providers/stepfun"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	// Default: reads llmgateway.toml from project root.
+	// Default: reads llmgate.toml from project root.
 	// Pass a path as first argument to override, e.g. go run main.go gateway.toml
-	cfgPath := "llmgateway.toml"
+	cfgPath := "llmgate.toml"
 	if len(os.Args) > 1 {
 		cfgPath = os.Args[1]
 	}

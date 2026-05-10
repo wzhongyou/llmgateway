@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/wzhongyou/llmgateway/core"
+	"github.com/wzhongyou/llmgate/core"
 )
 
 const defaultBaseURL = "https://api.llama.com/v1"

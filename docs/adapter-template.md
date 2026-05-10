@@ -1,6 +1,6 @@
 # Provider Adapter Template
 
-This is a step-by-step guide for adding a new LLM provider to llmgateway.
+This is a step-by-step guide for adding a new LLM provider to llmgate.
 
 ---
 
@@ -22,7 +22,7 @@ package openai
 
 import (
     "context"
-    "github.com/wzhongyou/llmgateway/core"
+    "github.com/wzhongyou/llmgate/core"
 )
 
 const defaultBaseURL = "https://api.openai.com/v1"
@@ -132,7 +132,7 @@ core.Usage{
 Consumers import your provider with a blank import:
 
 ```go
-import _ "github.com/wzhongyou/llmgateway/core/providers/openai"
+import _ "github.com/wzhongyou/llmgate/core/providers/openai"
 ```
 
 Also add the provider to the env-var map in `sdk/gateway.go`:

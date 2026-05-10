@@ -4,33 +4,33 @@ import (
 	"context"
 	"testing"
 
-	"github.com/wzhongyou/llmgateway"
+	"github.com/wzhongyou/llmgate"
 
-	_ "github.com/wzhongyou/llmgateway/core/providers/deepseek"
-	_ "github.com/wzhongyou/llmgateway/core/providers/glm"
-	_ "github.com/wzhongyou/llmgateway/core/providers/minimax"
+	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
+	_ "github.com/wzhongyou/llmgate/core/providers/glm"
+	_ "github.com/wzhongyou/llmgate/core/providers/minimax"
 )
 
 // requireProvider skips the test if the named provider is not configured.
-// Configuration comes from llmgateway.toml or the corresponding env var.
-func requireProvider(t *testing.T, gw *llmgateway.Gateway, name string) {
+// Configuration comes from llmgate.toml or the corresponding env var.
+func requireProvider(t *testing.T, gw *llmgate.Gateway, name string) {
 	t.Helper()
 	if _, ok := gw.Engine().GetProvider(name); !ok {
-		t.Skipf("%s not configured (set %s_KEY or add to llmgateway.toml)", name, name)
+		t.Skipf("%s not configured (set %s_KEY or add to llmgate.toml)", name, name)
 	}
 }
 
-func newGateway(t *testing.T) *llmgateway.Gateway {
+func newGateway(t *testing.T) *llmgate.Gateway {
 	t.Helper()
-	return llmgateway.New()
+	return llmgate.New()
 }
 
 func TestSDK_DeepSeek_Chat(t *testing.T) {
 	gw := newGateway(t)
 	requireProvider(t, gw, "deepseek")
 
-	resp, err := gw.Chat(context.Background(), &llmgateway.ChatRequest{
-		Messages: []llmgateway.Message{
+	resp, err := gw.Chat(context.Background(), &llmgate.ChatRequest{
+		Messages: []llmgate.Message{
 			{Role: "user", Content: "你好，请用一句话介绍你自己。"},
 		},
 	})
@@ -59,8 +59,8 @@ func TestSDK_DeepSeek_WithProvider(t *testing.T) {
 	gw := newGateway(t)
 	requireProvider(t, gw, "deepseek")
 
-	resp, err := gw.With("deepseek").Chat(context.Background(), &llmgateway.ChatRequest{
-		Messages:  []llmgateway.Message{{Role: "user", Content: "1+1=?"}},
+	resp, err := gw.With("deepseek").Chat(context.Background(), &llmgate.ChatRequest{
+		Messages:  []llmgate.Message{{Role: "user", Content: "1+1=?"}},
 		MaxTokens: intPtr(50),
 	})
 	if err != nil {
@@ -73,9 +73,9 @@ func TestSDK_DeepSeek_SystemPrompt(t *testing.T) {
 	gw := newGateway(t)
 	requireProvider(t, gw, "deepseek")
 
-	resp, err := gw.Chat(context.Background(), &llmgateway.ChatRequest{
+	resp, err := gw.Chat(context.Background(), &llmgate.ChatRequest{
 		System:   "你是一个数学家，回答必须简洁，不超过20个字。",
-		Messages: []llmgateway.Message{{Role: "user", Content: "1+1=?"}},
+		Messages: []llmgate.Message{{Role: "user", Content: "1+1=?"}},
 	})
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -90,8 +90,8 @@ func TestSDK_MetricsSnapshot(t *testing.T) {
 	gw := newGateway(t)
 	requireProvider(t, gw, "deepseek")
 
-	if _, err := gw.Chat(context.Background(), &llmgateway.ChatRequest{
-		Messages: []llmgateway.Message{{Role: "user", Content: "Hi"}},
+	if _, err := gw.Chat(context.Background(), &llmgate.ChatRequest{
+		Messages: []llmgate.Message{{Role: "user", Content: "Hi"}},
 	}); err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -111,8 +111,8 @@ func TestSDK_GLM_Chat(t *testing.T) {
 	gw := newGateway(t)
 	requireProvider(t, gw, "glm")
 
-	resp, err := gw.Chat(context.Background(), &llmgateway.ChatRequest{
-		Messages: []llmgateway.Message{
+	resp, err := gw.Chat(context.Background(), &llmgate.ChatRequest{
+		Messages: []llmgate.Message{
 			{Role: "user", Content: "你好，请用一句话介绍你自己。"},
 		},
 	})
@@ -138,8 +138,8 @@ func TestSDK_MiniMax_Chat(t *testing.T) {
 	gw := newGateway(t)
 	requireProvider(t, gw, "minimax")
 
-	resp, err := gw.Chat(context.Background(), &llmgateway.ChatRequest{
-		Messages: []llmgateway.Message{
+	resp, err := gw.Chat(context.Background(), &llmgate.ChatRequest{
+		Messages: []llmgate.Message{
 			{Role: "user", Content: "你好，请用一句话介绍你自己。"},
 		},
 	})
@@ -169,8 +169,8 @@ func TestSDK_GLM_Fallback(t *testing.T) {
 		t.Skip("neither glm nor deepseek configured")
 	}
 
-	resp, err := gw.Fallback("glm", "deepseek").Chat(context.Background(), &llmgateway.ChatRequest{
-		Messages:  []llmgateway.Message{{Role: "user", Content: "1+1=?"}},
+	resp, err := gw.Fallback("glm", "deepseek").Chat(context.Background(), &llmgate.ChatRequest{
+		Messages:  []llmgate.Message{{Role: "user", Content: "1+1=?"}},
 		MaxTokens: intPtr(20),
 	})
 	if err != nil {
