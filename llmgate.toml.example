@@ -1,6 +1,6 @@
-# llmgateway configuration
+# llmgate configuration
 # SDK auto-loads this file from CWD, or set path manually via GW_CONFIG
-# cp llmgateway.toml.example llmgateway.toml
+# cp llmgate.toml.example llmgate.toml
 #
 # Model can be specified at request time (req.Model) or configured per provider
 # below as default_model. If neither is set, each provider uses its built-in default:
