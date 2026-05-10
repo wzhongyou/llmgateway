@@ -1,0 +1,101 @@
+# llmgateway configuration
+# SDK auto-loads this file from CWD, or set path manually via GW_CONFIG
+# cp llmgateway.toml.example llmgateway.toml
+#
+# Model can be specified at request time (req.Model) or configured per provider
+# below as default_model. If neither is set, each provider uses its built-in default:
+#   anthropic -> claude-sonnet-4-6
+#   deepseek  -> deepseek-v4-flash
+#   ernie     -> ernie-5.1
+#   gemini    -> gemini-3.1-flash
+#   glm       -> glm-5.1
+#   grok      -> grok-4.1-fast-non-reasoning
+#   hunyuan   -> hy3-preview
+#   kimi      -> kimi-k2.6
+#   llama     -> llama-4-maverick
+#   mimo      -> mimo-v2-pro
+#   minimax   -> MiniMax-M2.7
+#   openai    -> gpt-5.5
+#   qwen      -> qwen3.6-plus
+#   stepfun   -> step-3.5-flash
+
+[[providers]]
+name = "anthropic"
+key = "${ANTHROPIC_KEY}"
+# base_url = "https://api.anthropic.com/v1"
+
+[[providers]]
+name = "deepseek"
+key = "${DEEPSEEK_KEY}"
+# base_url = "https://api.deepseek.com/v1"
+
+[[providers]]
+name = "ernie"
+key = "${ERNIE_KEY}"
+# base_url = "https://qianfan.baidubce.com/v2"
+
+[[providers]]
+name = "gemini"
+key = "${GEMINI_KEY}"
+# base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+[[providers]]
+name = "glm"
+key = "${GLM_KEY}"
+# base_url: override for third-party cloud vendors that resell GLM (e.g. Alibaba Bailian, Tencent Cloud)
+# base_url = "https://open.bigmodel.cn/api/paas/v4"
+
+[[providers]]
+name = "grok"
+key = "${GROK_KEY}"
+# base_url = "https://api.x.ai/v1"
+
+[[providers]]
+name = "hunyuan"
+key = "${HUNYUAN_KEY}"
+# base_url = "https://api.hunyuan.cloud.tencent.com/v1"
+
+[[providers]]
+name = "kimi"
+key = "${KIMI_KEY}"
+# base_url = "https://api.moonshot.cn/v1"
+
+[[providers]]
+name = "llama"
+key = "${LLAMA_KEY}"
+# base_url = "https://api.llama.com/v1"
+
+[[providers]]
+name = "mimo"
+key = "${MIMO_KEY}"
+# base_url = "https://api.xiaomimimo.com/v1"
+
+[[providers]]
+name = "minimax"
+key = "${MINIMAX_KEY}"
+# base_url = "https://api.minimaxi.com/v1"
+
+[[providers]]
+name = "openai"
+key = "${OPENAI_KEY}"
+# base_url = "https://api.openai.com/v1"
+
+[[providers]]
+name = "qwen"
+key = "${QWEN_KEY}"
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+[[providers]]
+name = "stepfun"
+key = "${STEPFUN_KEY}"
+# base_url = "https://api.stepfun.com/v1"
+
+# Routing strategy: determines provider selection order (decorator chain)
+[strategy]
+primary = "glm"
+fallback = ["minimax", "deepseek"]
+# Skip provider when P99 latency exceeds this threshold (ms). 0 = unlimited
+latency_threshold_ms = 5000
+
+[server]
+listen_addr = ":8080"

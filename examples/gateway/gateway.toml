@@ -1,0 +1,15 @@
+# Minimal config for the gateway example binary.
+# For development/testing, use the main llmgateway.toml in the project root.
+# Usage: go run main.go gateway.toml
+
+[[providers]]
+name = "deepseek"
+key = "${DEEPSEEK_KEY}"
+
+[strategy]
+primary = "deepseek"
+fallback = []
+latency_threshold_ms = 5000
+
+[server]
+listen_addr = ":8080"
