@@ -8,6 +8,7 @@ type providerDef struct {
 	defaultModel string
 	models       []string
 	envVar       string
+	bodyHook     func(map[string]interface{})
 }
 
 var builtins = []providerDef{
@@ -45,7 +46,8 @@ var builtins = []providerDef{
 		defaultModel: "glm-5.1",
 		models:       []string{"glm-5.1", "glm-5"},
 		envVar:       "GLM_KEY",
-	},
+			bodyHook:     glmBodyHook,
+		},
 	{
 		name:         "grok",
 		baseURL:      "https://api.x.ai/v1",
@@ -164,6 +166,7 @@ func init() {
 				baseURL:      baseURL,
 				defaultModel: defaultModel,
 				models:       d.models,
+				BodyHook:     d.bodyHook,
 			}, nil
 		})
 		core.RegisterProviderEnv(d.envVar, d.name)
@@ -178,4 +181,13 @@ func init() {
 			defaultModel: cfg.DefaultModel,
 		}, nil
 	})
+}
+
+// glmBodyHook adapts request body for GLM API.
+// GLM does not support OpenAI's "thinking" param; it uses "enable_thinking" instead.
+func glmBodyHook(body map[string]interface{}) {
+	if _, ok := body["thinking"]; ok {
+		delete(body, "thinking")
+		body["enable_thinking"] = false
+	}
 }

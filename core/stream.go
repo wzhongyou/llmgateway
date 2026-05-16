@@ -40,7 +40,8 @@ func OpenAIStream(ctx context.Context, body io.ReadCloser) <-chan StreamChunk {
 			var event struct {
 				Choices []struct {
 					Delta struct {
-						Content   string `json:"content"`
+						Content          string `json:"content"`
+						ReasoningContent string `json:"reasoning_content"`
 						ToolCalls []struct {
 							Index    int    `json:"index"`
 							ID       string `json:"id"`
@@ -97,8 +98,9 @@ func OpenAIStream(ctx context.Context, body io.ReadCloser) <-chan StreamChunk {
 			}
 
 			sc := StreamChunk{
-				Content: delta.Content,
-				Model:   event.Model,
+				Content:          delta.Content,
+				ReasoningContent: delta.ReasoningContent,
+				Model:            event.Model,
 			}
 			if event.Usage != nil {
 				reasoning := 0
@@ -113,7 +115,7 @@ func OpenAIStream(ctx context.Context, body io.ReadCloser) <-chan StreamChunk {
 				}
 			}
 
-			if sc.Content != "" || sc.Usage != nil {
+			if sc.Content != "" || sc.ReasoningContent != "" || sc.Usage != nil {
 				select {
 				case ch <- sc:
 				case <-ctx.Done():

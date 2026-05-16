@@ -63,10 +63,11 @@ type Usage struct {
 }
 
 type StreamChunk struct {
-	Content      string
-	ToolCalls    []ToolCall `json:"tool_calls,omitempty"` // non-nil only on final tool_calls chunk
-	FinishReason string     `json:"finish_reason,omitempty"`
-	Model        string
+	Content          string
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"` // non-nil only on final tool_calls chunk
+	FinishReason     string     `json:"finish_reason,omitempty"`
+	Model            string
 	Usage        *Usage // non-nil only on the final chunk
 	Error        error
 }
