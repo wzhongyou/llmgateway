@@ -1,6 +1,6 @@
 # llmgate
 
-> Go 智能体应用的 LLM 基础设施层
+> **高性能 LLM 网关，专为 Go 智能体打造** — 统一 API 接入 20+ 模型供应商，函数调用、流量控制、自动降级、智能体调试一站解决。
 
 [![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -26,6 +26,12 @@
 | **SDK** | Go 项目直接引入，一行代码接入多个模型 |
 | **Gateway** | 独立部署 HTTP 服务，非 Go 项目也能接入 |
 | **Studio**（规划中） | 可视化控制台，延迟分布 / 模型对比 / Token 趋势一屏看清 |
+
+### 核心亮点
+
+- **函数调用（Tool Use）全协议支持** — 统一的 `Tool`/`ToolCall` 类型同时适配 OpenAI、Anthropic、Gemini 三套协议，为 ReAct 智能体和 ToolNode 工作流做好准备。
+- **数据驱动的供应商架构** — 19 个独立 provider 包精简为一张 `builtins` 表。新增 OpenAI 兼容供应商只需一行数据，无需编写 Go 代码。
+- **零代码自定义接入** — 配置文件中 `protocol = "openai-compat"` 即可接入任意 OpenAI 兼容 API，完全不用写代码。
 
 ---
 

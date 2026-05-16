@@ -1,6 +1,6 @@
 # llmgate
 
-> LLM infrastructure layer for Go agent applications
+> **High-performance LLM gateway for Go agents** — unified API for 20+ providers, function calling, traffic control, auto-fallback & agent debugging.
 
 [![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -26,6 +26,12 @@ You're building agent applications and need to integrate multiple LLMs. Three re
 | **SDK** | Import directly in Go projects, integrate multiple models in one line |
 | **Gateway** | Deploy as a standalone HTTP service, works with any language |
 | **Studio** (planned) | Visual console — latency distribution, model comparison, token trends in one view |
+
+### Key features
+
+- **Function calling (Tool Use) across all protocols** — unified `Tool`/`ToolCall` types work with OpenAI, Anthropic, and Gemini. Ready for ReAct agents and ToolNode workflows.
+- **Data-driven provider architecture** — 19 provider packages replaced by a single `builtins` table. Adding a new OpenAI-compatible provider takes one data row, not a new source file.
+- **Zero-code custom providers** — `protocol = "openai-compat"` in config lets you add any OpenAI-compatible API without writing Go code.
 
 ---
 
