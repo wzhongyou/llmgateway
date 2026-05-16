@@ -8,6 +8,11 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/wzhongyou/llmgate/core"
+
+	// Auto-register all built-in providers.
+	_ "github.com/wzhongyou/llmgate/core/providers/anthropic"
+	_ "github.com/wzhongyou/llmgate/core/providers/gemini"
+	_ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
 )
 
 type Gateway struct {

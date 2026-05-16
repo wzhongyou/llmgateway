@@ -31,6 +31,10 @@ llmgate/
 ├── server/               # HTTP server wrapping the SDK
 │   ├── server.go         # HTTP handlers, middleware, auth, rate-limit, hot reload
 │   └── config.go         # server.Config, ServerConfig, LoadConfig
+├── console/              # Web console (embedded, enabled via admin_token)
+│   ├── console.go        # Console struct, MockStore, mockProvider, ringBuffer
+│   ├── admin.go          # Admin API handlers
+│   └── static/           # Frontend (HTML/CSS/JS, embed.FS)
 ├── llmgate.go            # Top-level type aliases + New() / NewFromFile()
 ├── examples/
 │   ├── sdk/              # SDK example (sync + stream + tool use)
@@ -57,21 +61,23 @@ llmgate/
 ```go
 // core/types.go
 type ChatRequest struct {
-    Messages    []Message
-    Model       string
-    System      string
-    Temperature *float64
-    MaxTokens   *int
-    Stream      bool
-    Tools       []Tool      `json:"tools,omitempty"`
-    ToolChoice  interface{} `json:"tool_choice,omitempty"` // "auto" | "none" | "required"
+    Messages     []Message
+    Model        string
+    System       string
+    Temperature  *float64
+    MaxTokens    *int
+    Stream       bool
+    Tools        []Tool      `json:"tools,omitempty"`
+    ToolChoice   interface{} `json:"tool_choice,omitempty"` // "auto" | "none" | "required"
+    ThinkingType string      `json:"thinking_type,omitempty"` // "disabled" to disable reasoning
 }
 
 type Message struct {
-    Role       string     // "user" | "assistant" | "system" | "tool"
-    Content    string
-    ToolCalls  []ToolCall `json:"tool_calls,omitempty"`  // set on assistant messages
-    ToolCallID string     `json:"tool_call_id,omitempty"` // set on tool result messages
+    Role             string     // "user" | "assistant" | "system" | "tool"
+    Content          string
+    ToolCalls        []ToolCall `json:"tool_calls,omitempty"`  // set on assistant messages
+    ToolCallID       string     `json:"tool_call_id,omitempty"` // set on tool result messages
+    ReasoningContent string     `json:"reasoning_content,omitempty"` // DeepSeek/GLM thinking content
 }
 
 type Tool struct {
@@ -97,13 +103,14 @@ type FunctionCall struct {
 }
 
 type ChatResponse struct {
-    Content      string
-    ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
-    FinishReason string     `json:"finish_reason,omitempty"` // "stop" | "tool_calls" | "length"
-    Model        string
-    Provider     string
-    Usage        Usage
-    Latency      time.Duration
+    Content          string
+    ReasoningContent string     `json:"reasoning_content,omitempty"`
+    ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+    FinishReason     string     `json:"finish_reason,omitempty"` // "stop" | "tool_calls" | "length"
+    Model            string
+    Provider         string
+    Usage            Usage
+    Latency          time.Duration
 }
 
 type StreamChunk struct {
@@ -284,6 +291,7 @@ latency_threshold_ms = 5000
 listen_addr = ":8080"
 api_keys = ["secret-key-1"]
 rate_limit_rpm = 600
+admin_token = "your-secret"
 ```
 
 ### HTTP Endpoints
@@ -293,6 +301,7 @@ rate_limit_rpm = 600
 | `POST` | `/v1/chat` | Chat completion — sync or SSE stream (`"stream": true`), supports tool use |
 | `GET` | `/v1/models` | List available models per provider |
 | `GET` | `/health` | Liveness probe |
+| `GET` | `/health/live` | Liveness probe (alias) |
 | `GET` | `/health/ready` | Readiness probe (503 when all providers failed) |
 | `GET` | `/metrics` | Provider metrics in Prometheus text format |
 
@@ -302,9 +311,9 @@ rate_limit_rpm = 600
 
 ## Adding a Provider
 
-### OpenAI-compatible (no code)
+### Option A: OpenAI-compatible API (no code)
 
-Add one entry to `builtins` in `core/providers/openaicompat/builtins.go`:
+Add one entry to the `builtins` table in `core/providers/openaicompat/builtins.go`:
 
 ```go
 {
@@ -316,8 +325,159 @@ Add one entry to `builtins` in `core/providers/openaicompat/builtins.go`:
 },
 ```
 
-This automatically registers the provider factory and its env-var mapping. No other files to touch.
+That's it. The generic `Provider` in `openaicompat.go` handles `Chat`, `ChatStream`, tool use, and stream parsing automatically.
 
-### Custom API format
+### Option B: Custom API format
 
-See [adapter-template.md](adapter-template.md).
+For providers with a non-OpenAI wire format (like Anthropic or Gemini), create a new package.
+
+**Step 1 — Create the package**
+
+```
+core/providers/<name>/
+└── <name>.go
+```
+
+**Step 2 — Implement the Provider interface**
+
+```go
+package myprovider
+
+import (
+    "context"
+    "encoding/json"
+    "io"
+    "net/http"
+
+    "github.com/wzhongyou/llmgate/core"
+)
+
+const defaultBaseURL = "https://api.myprovider.com/v1"
+
+func init() {
+    core.RegisterProviderEnv("MYPROVIDER_KEY", "myprovider")
+    core.RegisterProvider("myprovider", func(cfg core.ProviderConfig) (core.Provider, error) {
+        baseURL := cfg.BaseURL
+        if baseURL == "" {
+            baseURL = defaultBaseURL
+        }
+        defaultModel := cfg.DefaultModel
+        if defaultModel == "" {
+            defaultModel = "my-model-v1"
+        }
+        return &Provider{
+            key:          cfg.Key,
+            baseURL:      baseURL,
+            defaultModel: defaultModel,
+        }, nil
+    })
+}
+
+type Provider struct {
+    key          string
+    baseURL      string
+    defaultModel string
+    client       http.Client
+}
+
+func (p *Provider) Name() string     { return "myprovider" }
+func (p *Provider) Models() []string { return []string{"my-model-v1", "my-model-mini"} }
+
+func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+    // Build provider-specific request, make HTTP call, parse response.
+    // See anthropic.go or gemini.go for reference implementations.
+    return nil, nil
+}
+
+func (p *Provider) ChatStream(ctx context.Context, req *core.ChatRequest) (<-chan core.StreamChunk, error) {
+    return nil, nil
+}
+```
+
+**Step 3 — Error handling**
+
+Always return `*core.ProviderError`. Set `Retryable: true` for network errors, 5xx, and 429:
+
+```go
+resp, err := p.client.Do(httpReq)
+if err != nil {
+    return nil, &core.ProviderError{Provider: "myprovider", Message: err.Error(), Retryable: true, Cause: err}
+}
+if resp.StatusCode != http.StatusOK {
+    body, _ := io.ReadAll(resp.Body)
+    return nil, &core.ProviderError{
+        Provider:   "myprovider",
+        StatusCode: resp.StatusCode,
+        Message:    string(body),
+        Retryable:  resp.StatusCode >= 500 || resp.StatusCode == 429,
+    }
+}
+```
+
+**Step 4 — Tool use**
+
+- **OpenAI-compatible tool format**: use `core.OpenAIBody` / `core.OpenAIParseChat` — tool use is handled automatically.
+- **Anthropic format**: see `anthropicMessages()` and `anthropicTools()` in `core/providers/anthropic/anthropic.go`.
+- **Gemini format**: see `geminiMessages()` and `geminiTools()` in `core/providers/gemini/gemini.go`.
+
+**Checklist:**
+
+- `Name()` returns a unique, lowercase identifier
+- `Models()` lists supported models
+- `Chat()` handles `req.System`, `req.Model`, `req.MaxTokens`, `req.Temperature`
+- `Chat()` handles `req.Tools` and `req.ToolChoice`; populates `resp.ToolCalls`
+- `Chat()` uses `baseURL` from config if set, falls back to built-in default
+- `Chat()` parses reasoning content when available
+- `Chat()` returns `*core.ProviderError` with correct `Retryable` flag
+- `ChatStream()` implemented; returns error before channel is opened
+- `init()` calls `core.RegisterProviderEnv(envVar, name)` then `core.RegisterProvider(name, factory)`
+
+---
+
+## Console
+
+The gateway binary embeds a developer web console. Set `admin_token` to enable it at `/admin/`.
+
+### Directory
+
+```
+console/
+├── console.go         # Console struct, MockStore, mockProvider, ringBuffer
+├── admin.go           # Admin API handlers + Setup
+└── static/            # Embedded frontend (embed.FS)
+    ├── index.html
+    ├── app.js
+    └── style.css
+```
+
+### Admin API
+
+```
+GET    /admin/api/channels              # list providers with metrics
+GET    /admin/api/channels/{name}       # get single provider detail
+PUT    /admin/api/channels/{name}       # create or update provider
+DELETE /admin/api/channels/{name}       # remove provider
+POST   /admin/api/channels/{name}/test  # test connection
+
+POST   /admin/api/playground/chat       # sync chat
+POST   /admin/api/playground/stream     # SSE streaming chat
+
+GET    /admin/api/mock/rules            # list mock rules
+POST   /admin/api/mock/rules            # create mock rule
+PUT    /admin/api/mock/rules/{id}       # update mock rule
+DELETE /admin/api/mock/rules/{id}       # delete mock rule
+POST   /admin/api/mock/rules/reorder    # reorder priorities
+
+GET    /admin/api/recent                # list recent requests
+GET    /admin/api/recent/{id}           # get full request/response
+
+POST   /admin/api/config/save           # write config to TOML file
+```
+
+### Mock Provider
+
+Registered as `"mock"` on the engine. Each `MockRule` has a match model, priority, and action (`response`/`error`/`timeout`/`empty`). Preset templates include 429, 500, timeout, and empty response. Rules take effect immediately — no restart required.
+
+### Recent Requests
+
+Last 200 requests in a ring buffer (in-memory, lost on restart). Summary table auto-refreshes every 5 seconds. Expand any entry to view full request/response JSON.

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-AI assistant context for this project. Architecture and API are in [docs/design.md](docs/design.md). Adding a provider: [docs/adapter-template.md](docs/adapter-template.md).
+AI assistant context for this project. Architecture, API, provider adapter guide, and console design are in [docs/design.md](docs/design.md).
 
 ---
 
@@ -56,11 +56,9 @@ Config for tests: copy `llmgate.toml.example` → `llmgate.toml` and fill in key
 
 ## Adding a provider
 
-Reference implementation for OpenAI-compatible APIs: [core/providers/glm/glm.go](core/providers/glm/glm.go).  
+Reference for OpenAI-compatible APIs: add one entry to the `builtins` table in [core/providers/openaicompat/builtins.go](core/providers/openaicompat/builtins.go).  
 Reference for custom API format: [core/providers/anthropic/anthropic.go](core/providers/anthropic/anthropic.go) or [core/providers/gemini/gemini.go](core/providers/gemini/gemini.go).  
-Full checklist: [docs/adapter-template.md](docs/adapter-template.md).
-
-Register in `sdk/gateway.go` `loadEnv()` env var map and add to both example files.
+Full checklist in [docs/design.md](docs/design.md) — Adding a Provider section.
 
 ---
 
@@ -69,3 +67,9 @@ Register in `sdk/gateway.go` `loadEnv()` env var map and add to both example fil
 The server middleware logs one line per request. For `/v1/chat`, the log includes LLM-specific fields populated via a `*reqMeta` pointer stored in request context — handlers write to it, middleware reads it at the end. Do not move this logging into handlers or split it across multiple log calls.
 
 Fields logged: `request_id`, `method`, `path`, `status`, `latency_ms`, `remote_addr`, `provider`, `model`, `input_tokens`, `output_tokens`, `reasoning_tokens`.
+
+---
+
+## Release tagging
+
+Tags follow Go module semver: `vMAJOR.MINOR.PATCH`. While the module is pre-1.0, bump MINOR for breaking changes, PATCH for fixes. Dependent projects pin via `go get github.com/wzhongyou/llmgate@v0.1.0`.

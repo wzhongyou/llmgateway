@@ -5,10 +5,6 @@ import (
 	"fmt"
 
 	"github.com/wzhongyou/llmgate"
-
-	_ "github.com/wzhongyou/llmgate/core/providers/anthropic"
-	_ "github.com/wzhongyou/llmgate/core/providers/gemini"
-	_ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
 )
 
 // go run ./examples/sdk/

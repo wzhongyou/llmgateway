@@ -25,31 +25,34 @@ type FunctionCall struct {
 }
 
 type ChatRequest struct {
-	Messages    []Message
-	Model       string
-	System      string
-	Temperature *float64
-	MaxTokens   *int
-	Stream      bool
-	Tools       []Tool      `json:"tools,omitempty"`
-	ToolChoice  interface{} `json:"tool_choice,omitempty"`
+	Messages     []Message
+	Model        string
+	System       string
+	Temperature  *float64
+	MaxTokens    *int
+	Stream       bool
+	Tools        []Tool      `json:"tools,omitempty"`
+	ToolChoice   interface{} `json:"tool_choice,omitempty"`
+	ThinkingType string      `json:"thinking_type,omitempty"` // "disabled" to disable reasoning
 }
 
 type Message struct {
-	Role       string     `json:"role"` // "user" | "assistant" | "system" | "tool"
-	Content    string     `json:"content,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`  // set when assistant calls tools
-	ToolCallID string     `json:"tool_call_id,omitempty"` // set when role=="tool"
+	Role             string     `json:"role"`
+	Content          string     `json:"content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
 }
 
 type ChatResponse struct {
-	Content      string
-	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
-	FinishReason string     `json:"finish_reason,omitempty"`
-	Model        string
-	Provider     string
-	Usage        Usage
-	Latency      time.Duration
+	Content          string
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	FinishReason     string     `json:"finish_reason,omitempty"`
+	Model            string
+	Provider         string
+	Usage            Usage
+	Latency          time.Duration
 }
 
 type Usage struct {

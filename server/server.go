@@ -8,19 +8,22 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/wzhongyou/llmgate/console"
 	"github.com/wzhongyou/llmgate/core"
 	"github.com/wzhongyou/llmgate/sdk"
 )
 
 type Server struct {
-	mu     sync.RWMutex
-	gw     *sdk.Gateway
-	cfg    *Config
-	logger *slog.Logger
-	rl     *rateLimiter
+	mu      sync.RWMutex
+	gw      *sdk.Gateway
+	cfg     *Config
+	logger  *slog.Logger
+	rl      *rateLimiter
+	console *console.Console
 }
 
 type Option func(*Server)
@@ -42,6 +45,20 @@ func New(cfg *Config, opts ...Option) (*Server, error) {
 	if cfg.Server.RateLimitRPM > 0 {
 		s.rl = newRateLimiter(cfg.Server.RateLimitRPM)
 	}
+	if cfg.ConfigPath() != "" {
+		s.console = console.New(console.Config{
+			Engine:          gw.Engine(),
+			ConfigPath:      cfg.ConfigPath(),
+			AdminToken:      cfg.Server.AdminToken,
+			RawProviderKeys: cfg.KeyRefs(),
+			SaveConfig: func() error {
+				s.mu.RLock()
+				c := s.cfg
+				s.mu.RUnlock()
+				return SaveConfig(c.configPath, c)
+			},
+		})
+	}
 	for _, o := range opts {
 		o(s)
 	}
@@ -62,6 +79,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/health/live", s.handleLive)
 	mux.HandleFunc("/health/ready", s.handleReady)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	if s.console != nil {
+		s.console.Setup(mux)
+	}
 	return s.middleware(mux)
 }
 
@@ -158,6 +178,28 @@ func newRequestID() string {
 
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Static console files need no auth; API routes use admin_token.
+		if strings.HasPrefix(r.URL.Path, "/admin/") {
+			if strings.HasPrefix(r.URL.Path, "/admin/api/") {
+				s.mu.RLock()
+				adminToken := s.cfg.Server.AdminToken
+				s.mu.RUnlock()
+				if adminToken != "" {
+					token := r.Header.Get("Authorization")
+					if len(token) > 7 && token[:7] == "Bearer " {
+						token = token[7:]
+					}
+					if token != adminToken {
+						writeJSONDirect(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+						return
+					}
+				}
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+
+
 		// API key auth
 		s.mu.RLock()
 		apiKeys := s.cfg.Server.APIKeys
@@ -368,8 +410,29 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		if s.console != nil {
+			s.console.RecordRequest(console.RecentEntry{
+				Time:    time.Now(),
+				Status:  http.StatusInternalServerError,
+				Error:   err.Error(),
+				Request: &req,
+			})
+		}
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if s.console != nil {
+		s.console.RecordRequest(console.RecentEntry{
+			Time:         time.Now(),
+			Provider:     resp.Provider,
+			Model:        resp.Model,
+			Status:       http.StatusOK,
+			LatencyMs:    float64(resp.Latency.Microseconds()) / 1000.0,
+			InputTokens:  resp.Usage.InputTokens,
+			OutputTokens: resp.Usage.OutputTokens,
+			Request:      &req,
+			Response:     resp,
+		})
 	}
 	s.writeJSON(w, http.StatusOK, resp)
 }

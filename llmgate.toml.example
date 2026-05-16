@@ -141,6 +141,7 @@ fallback = ["minimax", "deepseek"]
 latency_threshold_ms = 5000
 
 [server]
-listen_addr = ":8080"
+listen_addr = ":8084"
 # api_keys = ["your-secret-key-1", "your-secret-key-2"]  # Bearer token auth; empty = no auth
 # rate_limit_rpm = 600  # global requests per minute; 0 = unlimited
+# admin_token = "your-secret"  # enables the web console at /admin/

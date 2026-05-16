@@ -4,10 +4,11 @@ import "encoding/json"
 
 // oaiMsg is the OpenAI wire-format message.
 type oaiMsg struct {
-	Role       string     `json:"role"`
-	Content    *string    `json:"content"`              // nil encodes as JSON null
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role             string     `json:"role"`
+	Content          *string    `json:"content"` // nil encodes as JSON null
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
 }
 
 // OpenAIMessages converts ChatRequest messages to OpenAI wire format,
@@ -19,7 +20,7 @@ func OpenAIMessages(req *ChatRequest) []oaiMsg {
 		msgs = append(msgs, oaiMsg{Role: "system", Content: &s})
 	}
 	for _, m := range req.Messages {
-		om := oaiMsg{Role: m.Role, ToolCallID: m.ToolCallID}
+		om := oaiMsg{Role: m.Role, ToolCallID: m.ToolCallID, ReasoningContent: m.ReasoningContent}
 		if len(m.ToolCalls) > 0 {
 			om.ToolCalls = m.ToolCalls
 			if m.Content != "" {
@@ -54,6 +55,9 @@ func OpenAIBody(model string, stream bool, req *ChatRequest) map[string]interfac
 			body["tool_choice"] = req.ToolChoice
 		}
 	}
+	if req.ThinkingType == "disabled" {
+		body["thinking"] = map[string]string{"type": "disabled"}
+	}
 	return body
 }
 
@@ -62,8 +66,9 @@ func OpenAIParseChat(data []byte, providerName string) (*ChatResponse, error) {
 	var r struct {
 		Choices []struct {
 			Message struct {
-				Content   *string    `json:"content"`
-				ToolCalls []ToolCall `json:"tool_calls"`
+				Content          *string    `json:"content"`
+				ToolCalls        []ToolCall `json:"tool_calls"`
+				ReasoningContent string     `json:"reasoning_content"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -96,10 +101,11 @@ func OpenAIParseChat(data []byte, providerName string) (*ChatResponse, error) {
 		reasoning = r.Usage.CompletionDetails.ReasoningTokens
 	}
 	return &ChatResponse{
-		Content:      content,
-		ToolCalls:    ch.Message.ToolCalls,
-		FinishReason: ch.FinishReason,
-		Model:        r.Model,
+		Content:          content,
+		ToolCalls:        ch.Message.ToolCalls,
+		FinishReason:     ch.FinishReason,
+		Model:            r.Model,
+		ReasoningContent: ch.Message.ReasoningContent,
 		Usage: Usage{
 			InputTokens:     r.Usage.PromptTokens,
 			OutputTokens:    r.Usage.CompletionTokens,

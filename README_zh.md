@@ -37,7 +37,7 @@ snap := gw.Snapshot()                                  // 各 provider 延迟及
 |------|----------|
 | **SDK** | Go 项目直接引入，一行代码接入多个模型 |
 | **Gateway** | 独立部署 HTTP 服务，非 Go 项目也能接入 |
-| **Studio**（规划中） | 可视化控制台，延迟分布 / 模型对比 / Token 趋势一屏看清 |
+| **Studio** | 可视化控制台，渠道管理 / 对话调试 / Mock 桩 / 请求记录一屏看清 |
 
 ### 核心亮点
 
@@ -95,10 +95,6 @@ import (
 
     "github.com/wzhongyou/llmgate"
 
-    // 一行 blank import 注册全部 21 个内置 provider
-    _ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
-    _ "github.com/wzhongyou/llmgate/core/providers/anthropic"
-    _ "github.com/wzhongyou/llmgate/core/providers/gemini"
 )
 
 func main() {
@@ -173,6 +169,36 @@ snap := gw.Snapshot()
 fmt.Printf("DeepSeek 延迟: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs)
 ```
 
+## 控制台
+
+网关二进制内嵌了开发者控制台。配置 `admin_token` 即可启用：
+
+```toml
+[server]
+listen_addr = ":8080"
+admin_token = "your-secret"
+```
+
+```bash
+go run ./examples/server
+# 浏览器打开 http://localhost:8080/admin/
+```
+
+**四大页面覆盖开发全流程：**
+
+| 页面 | 用途 |
+|------|------|
+| **Channels（渠道）** | 可视化管理 provider — 增/删/改/测，查看状态和延迟 |
+| **Playground（调试）** | 交互式测试 — 选模型、看流式输出、Token 用量、延迟 |
+| **Mock（桩）** | 模拟返回 — 模拟 429/500/超时/空响应，测试异常处理 |
+| **Recent（记录）** | 最近 200 条请求 — 完整输入输出查看，每 5s 自动刷新 |
+
+Mock provider 以 `"mock"` 名称注册在引擎上，在 Playground 中选择即可验证规则。
+
+详见 [design.md](docs/design.md#console)。
+
+---
+
 **优先级（从高到低）：**
 1. `.Fallback(...)` — 代码中显式指定降级链
 2. `.With(...)` — 固定使用某个 provider
@@ -207,12 +233,15 @@ latency_threshold_ms = 5000
 
 [server]
 listen_addr = ":8080"
+admin_token = "your-secret"   # 启用 /admin/ 控制台
 ```
 
 接口：
 - `POST /v1/chat` — 对话，支持函数调用（可选 `?provider=` / `?fallback=` 查询参数）
 - `GET /v1/models` — 可用模型列表
 - `GET /health` — 健康检查
+- `GET /metrics` — Prometheus 指标
+- `GET /admin/` — 可视化控制台（需配置 `admin_token`）
 
 ---
 
@@ -290,6 +319,7 @@ llmgate/
 ├── server/               # HTTP 服务
 ├── docs/                 # 设计文档
 └── examples/             # 使用示例
+├── console/              # 可视化控制台（内嵌）
 ```
 
 ---
@@ -317,7 +347,7 @@ go test ./sdk/ ./server/ -v -count=1
 - [x] **v0.3** — 14 家供应商 / 3 套协议全覆盖，推理 token 追踪，默认模型可配置
 - [x] **v1.0** — Streaming（SSE）+ 生产级路由策略（熔断、限流、重试）
 - [x] **v1.1** — 函数调用（Tool Use）全协议支持；21 家供应商；数据驱动架构
-- [ ] **v1.5** — 可视化控制台：延迟分布、Prompt 版本管理、模型对比评估
+- [x] **v1.5** — 可视化控制台：渠道管理、对话调试、Mock 桩、请求记录
 
 ---
 
@@ -335,7 +365,7 @@ go test ./sdk/ ./server/ -v -count=1
 },
 ```
 
-**自定义协议** — 实现 `Provider` 接口，参考 [adapter-template.md](docs/adapter-template.md)。
+**自定义协议** — 实现 `Provider` 接口，参考 [design.md](docs/design.md#adding-a-provider)。
 
 ---
 

@@ -37,7 +37,7 @@ You're building agent applications and need to integrate multiple LLMs. Three re
 |------|----------|
 | **SDK** | Import directly in Go projects, integrate multiple models in one line |
 | **Gateway** | Deploy as a standalone HTTP service, works with any language |
-| **Studio** (planned) | Visual console — latency distribution, model comparison, token trends in one view |
+| **Studio** | Visual console — channel management, chat playground, mock stubs, request debugging |
 
 ### Key features
 
@@ -95,10 +95,6 @@ import (
 
     "github.com/wzhongyou/llmgate"
 
-    // One blank import registers all 21 built-in providers
-    _ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
-    _ "github.com/wzhongyou/llmgate/core/providers/anthropic"
-    _ "github.com/wzhongyou/llmgate/core/providers/gemini"
 )
 
 func main() {
@@ -173,6 +169,36 @@ snap := gw.Snapshot()
 fmt.Printf("DeepSeek latency: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs)
 ```
 
+## Console
+
+A developer-focused web console is embedded in the gateway binary. Set `admin_token` to enable it:
+
+```toml
+[server]
+listen_addr = ":8080"
+admin_token = "your-secret"
+```
+
+```bash
+go run ./examples/server
+# Open http://localhost:8080/admin/
+```
+
+**Four pages for the development workflow:**
+
+| Page | Purpose |
+|------|---------|
+| **Channels** | Visual provider CRUD — add/edit/test providers, view status and latency |
+| **Playground** | Interactive chat testing — select provider/model, view streaming output, token usage, latency |
+| **Mock** | Mock response stubs — simulate 429/500/timeout/empty responses for testing error handling |
+| **Recent** | Last 200 requests — full request/response inspection, auto-refreshes every 5s |
+
+The mock provider registers as `"mock"` on the engine. Select it in Playground to test against your mock rules.
+
+See [design.md](docs/design.md#console) for the technical design.
+
+---
+
 **Precedence (highest to lowest):**
 1. `.Fallback(...)` — explicit in-code chain
 2. `.With(...)` — pin to a provider
@@ -207,12 +233,15 @@ latency_threshold_ms = 5000
 
 [server]
 listen_addr = ":8080"
+admin_token = "your-secret"   # enables the web console at /admin/
 ```
 
 Endpoints:
 - `POST /v1/chat` — chat completion (supports function calling; optional `?provider=` / `?fallback=` query params)
 - `GET /v1/models` — list available models
 - `GET /health` — health check
+- `GET /metrics` — Prometheus metrics
+- `GET /admin/` — web console (when `admin_token` is set)
 
 ---
 
@@ -288,6 +317,7 @@ llmgate/
 │       └── gemini/       # Gemini generateContent API
 ├── sdk/                  # Go SDK
 ├── server/               # HTTP server
+├── console/              # Web console (embedded)
 ├── docs/                 # Design docs
 └── examples/             # Usage examples
 ```
@@ -317,7 +347,7 @@ Tests skip automatically if no key is configured.
 - [x] **v0.3** — 14 providers across 3 protocols, reasoning tokens, configurable default models
 - [x] **v1.0** — Streaming (SSE) + production routing (circuit breaking, rate limiting, retry)
 - [x] **v1.1** — Function calling (tool use) across all providers; 21 providers; data-driven provider architecture
-- [ ] **v1.5** — Visual console: latency distribution, prompt version management, model evaluation
+- [x] **v1.5** — Web console: channel management, chat playground, mock stubs, request debugging
 
 ---
 
@@ -335,7 +365,7 @@ Tests skip automatically if no key is configured.
 },
 ```
 
-**For custom API formats** — implement the `Provider` interface (see [adapter-template.md](docs/adapter-template.md)).
+**For custom API formats** — implement the `Provider` interface (see [design.md](docs/design.md#adding-a-provider)).
 
 ---
 
