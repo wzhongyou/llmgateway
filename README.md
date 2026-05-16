@@ -7,6 +7,18 @@
 
 [中文文档](README_zh.md) · [Design Doc](docs/design.md) · [Contributing](CONTRIBUTING.md)
 
+```go
+// ❌ Without llmgate: every provider has its own SDK, switching models means rewriting integration code
+resp, _ := deepseek.Chat(ctx, "sk-xxx", deepseekReq)
+// → change to Claude? now you need anthropic.Messages(...) with a different payload format
+
+// ✅ With llmgate: one API, any model, auto-fallback, built-in metrics
+gw, _ := llmgate.NewFromFile("llmgate.toml")
+reply, _ := gw.With("claude").Chat(ctx, req)         // switch with one string
+reply, _ := gw.Fallback("claude", "deepseek").Chat(ctx, req) // auto fallback
+snap := gw.Snapshot()                                  // per-provider latency & tokens
+```
+
 ---
 
 ## What is this

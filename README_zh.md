@@ -7,6 +7,18 @@
 
 [English](README.md) · [设计文档](docs/design.md) · [参与共建](CONTRIBUTING.md)
 
+```go
+// ❌ 没有 llmgate：每家 SDK 不同，切换模型 = 到处改集成代码
+resp, _ := deepseek.Chat(ctx, "sk-xxx", deepseekReq)
+// → 换成 Claude？得换成 anthropic.Messages(...)，请求格式全变
+
+// ✅ 有 llmgate：一套 API，任意模型，自动降级，内置指标
+gw, _ := llmgate.NewFromFile("llmgate.toml")
+reply, _ := gw.With("claude").Chat(ctx, req)         // 切换只需改一个字符串
+reply, _ := gw.Fallback("claude", "deepseek").Chat(ctx, req) // 自动降级
+snap := gw.Snapshot()                                  // 各 provider 延迟及 token 统计
+```
+
 ---
 
 ## 这是什么
