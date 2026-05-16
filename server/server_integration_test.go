@@ -1,37 +1,39 @@
-package gateway_test
+package server_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/wzhongyou/llmgate/core"
-	"github.com/wzhongyou/llmgate/gateway"
+	"github.com/wzhongyou/llmgate/server"
 
 	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
 )
 
-func newGatewayServer(t *testing.T) *httptest.Server {
+func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	key := os.Getenv("DEEPSEEK_KEY")
 	if key == "" {
 		t.Skip("DEEPSEEK_KEY not set")
 	}
-	srv, err := gateway.New(&core.GatewayConfig{
+	srv, err := server.New(&server.Config{
 		Providers: []core.ProviderConfig{{Name: "deepseek", Key: key}},
 	})
 	if err != nil {
-		t.Fatalf("gateway.New: %v", err)
+		t.Fatalf("server.New: %v", err)
 	}
 	return httptest.NewServer(srv.Handler())
 }
 
-func TestGateway_Health(t *testing.T) {
-	ts := newGatewayServer(t)
+func TestServer_Health(t *testing.T) {
+	ts := newTestServer(t)
 	defer ts.Close()
 
 	resp, err := http.Get(ts.URL + "/health")
@@ -44,8 +46,8 @@ func TestGateway_Health(t *testing.T) {
 	}
 }
 
-func TestGateway_Models(t *testing.T) {
-	ts := newGatewayServer(t)
+func TestServer_Models(t *testing.T) {
+	ts := newTestServer(t)
 	defer ts.Close()
 
 	resp, err := http.Get(ts.URL + "/v1/models")
@@ -72,8 +74,8 @@ func TestGateway_Models(t *testing.T) {
 	t.Logf("Models: %+v", body.Data)
 }
 
-func TestGateway_Chat(t *testing.T) {
-	ts := newGatewayServer(t)
+func TestServer_Chat(t *testing.T) {
+	ts := newTestServer(t)
 	defer ts.Close()
 
 	payload, _ := json.Marshal(core.ChatRequest{
@@ -109,8 +111,8 @@ func TestGateway_Chat(t *testing.T) {
 		chatResp.Latency)
 }
 
-func TestGateway_ChatWithProvider(t *testing.T) {
-	ts := newGatewayServer(t)
+func TestServer_ChatWithProvider(t *testing.T) {
+	ts := newTestServer(t)
 	defer ts.Close()
 
 	payload, _ := json.Marshal(core.ChatRequest{
@@ -127,8 +129,8 @@ func TestGateway_ChatWithProvider(t *testing.T) {
 	t.Log("Chat with provider query param OK")
 }
 
-func TestGateway_Fallback(t *testing.T) {
-	ts := newGatewayServer(t)
+func TestServer_Fallback(t *testing.T) {
+	ts := newTestServer(t)
 	defer ts.Close()
 
 	payload, _ := json.Marshal(core.ChatRequest{
@@ -150,8 +152,8 @@ func TestGateway_Fallback(t *testing.T) {
 	t.Logf("Fallback response from: %s", chatResp.Provider)
 }
 
-func TestGateway_ContextCancellation(t *testing.T) {
-	ts := newGatewayServer(t)
+func TestServer_ContextCancellation(t *testing.T) {
+	ts := newTestServer(t)
 	defer ts.Close()
 
 	payload, _ := json.Marshal(core.ChatRequest{
@@ -174,6 +176,61 @@ func TestGateway_ContextCancellation(t *testing.T) {
 	} else {
 		t.Logf("Expected timeout/cancellation: %v", err)
 	}
+}
+
+func TestServer_ChatStream(t *testing.T) {
+	ts := newTestServer(t)
+	defer ts.Close()
+
+	payload, _ := json.Marshal(core.ChatRequest{
+		Messages:  []core.Message{{Role: "user", Content: "Count to 3."}},
+		MaxTokens: intPtr(50),
+		Stream:    true,
+	})
+	resp, err := http.Post(ts.URL+"/v1/chat", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("POST /v1/chat: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("expected Content-Type text/event-stream, got %q", ct)
+	}
+
+	var content string
+	var chunks int
+	done := false
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "data: [DONE]" {
+			done = true
+			break
+		}
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var chunk struct {
+			Content string      `json:"Content"`
+			Usage   *core.Usage `json:"Usage"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &chunk); err != nil {
+			t.Fatalf("parse chunk: %v", err)
+		}
+		content += chunk.Content
+		chunks++
+	}
+
+	if !done {
+		t.Error("expected data: [DONE] terminator")
+	}
+	if content == "" {
+		t.Error("expected non-empty content")
+	}
+	t.Logf("chunks=%d content=%q", chunks, content)
 }
 
 func intPtr(i int) *int { return &i }

@@ -8,6 +8,7 @@ import (
 type Gateway = sdk.Gateway
 type ChatRequest = core.ChatRequest
 type ChatResponse = core.ChatResponse
+type StreamChunk = core.StreamChunk
 type Message = core.Message
 type Usage = core.Usage
 type Provider = core.Provider
@@ -17,4 +18,8 @@ type ProviderStats = core.ProviderStats
 
 func New() *sdk.Gateway {
 	return sdk.New()
+}
+
+func NewFromFile(path string) (*sdk.Gateway, error) {
+	return sdk.NewFromFile(path)
 }

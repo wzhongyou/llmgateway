@@ -9,17 +9,12 @@ import (
 type GatewayConfig struct {
 	Providers []ProviderConfig `toml:"providers"`
 	Strategy  StrategyConfig   `toml:"strategy"`
-	Server    ServerConfig     `toml:"server"`
 }
 
 type StrategyConfig struct {
 	Primary            string   `toml:"primary"`
 	Fallback           []string `toml:"fallback"`
 	LatencyThresholdMs int64    `toml:"latency_threshold_ms"`
-}
-
-type ServerConfig struct {
-	ListenAddr string `toml:"listen_addr"`
 }
 
 func ExpandEnv(s string) string {
@@ -49,8 +44,12 @@ func ExpandEnv(s string) string {
 }
 
 func (c *GatewayConfig) ApplyEnv() {
-	for i := range c.Providers {
-		c.Providers[i].Key = ExpandEnv(c.Providers[i].Key)
+	ApplyProviderEnv(c.Providers)
+}
+
+func ApplyProviderEnv(providers []ProviderConfig) {
+	for i := range providers {
+		providers[i].Key = ExpandEnv(providers[i].Key)
 	}
 }
 

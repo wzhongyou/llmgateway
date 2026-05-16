@@ -70,14 +70,17 @@ func (s *LatencyStrategy) Select(providers []Provider, req *ChatRequest, metrics
 type TimeBasedStrategy struct {
 	dayProvider   string
 	nightProvider string
+	nowFn         func() time.Time
 }
 
 func NewTimeBasedStrategy(dayProvider, nightProvider string) *TimeBasedStrategy {
-	return &TimeBasedStrategy{dayProvider: dayProvider, nightProvider: nightProvider}
+	return &TimeBasedStrategy{dayProvider: dayProvider, nightProvider: nightProvider, nowFn: time.Now}
 }
 
+func (s *TimeBasedStrategy) SetNowFn(fn func() time.Time) { s.nowFn = fn }
+
 func (s *TimeBasedStrategy) Select(providers []Provider, req *ChatRequest, metrics *MetricsSnapshot) []Provider {
-	now := time.Now()
+	now := s.nowFn()
 	primary := s.dayProvider
 	if now.Hour() < 8 || now.Hour() >= 20 {
 		primary = s.nightProvider

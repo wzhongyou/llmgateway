@@ -108,6 +108,15 @@ reply, _ := gw.With("anthropic").Chat(ctx, req)
 // Fallback chain
 reply, _ := gw.Fallback("anthropic", "deepseek").Chat(ctx, req)
 
+// Streaming (SSE)
+ch, err := gw.ChatStream(ctx, &llmgate.ChatRequest{
+    Messages: []llmgate.Message{{Role: "user", Content: "Hello"}},
+})
+for chunk := range ch {
+    if chunk.Error != nil { break }
+    fmt.Print(chunk.Content)
+}
+
 // Metrics
 snap := gw.Snapshot()
 fmt.Printf("DeepSeek latency: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs)
@@ -124,13 +133,13 @@ fmt.Printf("DeepSeek latency: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyM
 
 ---
 
-## Gateway Mode
+## Server Mode
 
 Standalone HTTP server for multi-language access:
 
 ```bash
 cp llmgate.toml.example llmgate.toml
-go run examples/gateway/main.go
+go run examples/server/main.go
 ```
 
 ```toml
@@ -178,7 +187,7 @@ Inject a custom logger in Gateway mode:
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-srv, _ := gateway.New(cfg, gateway.WithLogger(logger))
+srv, _ := server.New(cfg, server.WithLogger(logger))
 ```
 
 ---
@@ -214,7 +223,7 @@ All providers support `base_url` override for proxies, private deployments, or t
 llmgate/
 ├── core/        # Provider interface, engine, strategies, metrics
 ├── sdk/         # Go SDK
-├── gateway/     # HTTP server
+├── server/      # HTTP server
 ├── docs/        # Design docs
 └── examples/    # Usage examples
 ```
@@ -230,7 +239,7 @@ cp llmgate.toml.example llmgate.toml
 # export GLM_KEY=xxx  MINIMAX_KEY=xxx  DEEPSEEK_KEY=xxx
 
 # 2. Run integration tests
-go test ./sdk/ ./gateway/ -v -count=1
+go test ./sdk/ ./server/ -v -count=1
 ```
 
 Tests skip automatically if no key is configured.
@@ -242,7 +251,7 @@ Tests skip automatically if no key is configured.
 - [x] **v0.1** — Go SDK + DeepSeek + basic fallback strategy + metrics
 - [x] **v0.2** — Zhipu (GLM) + MiniMax + structured logging (slog)
 - [x] **v0.3** — 14 providers across 3 protocols, reasoning tokens, configurable default models
-- [ ] **v1.0** — Streaming + production routing (circuit breaking, rate limiting, retry)
+- [x] **v1.0** — Streaming (SSE) + production routing (circuit breaking, rate limiting, retry)
 - [ ] **v1.5** — Visual console: latency distribution, prompt version management, model evaluation
 
 ---

@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/wzhongyou/llmgate/gateway"
+	"github.com/wzhongyou/llmgate/server"
 
 	// Register built-in providers
 	_ "github.com/wzhongyou/llmgate/core/providers/anthropic"
@@ -26,23 +26,24 @@ import (
 	_ "github.com/wzhongyou/llmgate/core/providers/stepfun"
 )
 
+// go run ./examples/server
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
 	// Default: reads llmgate.toml from project root.
-	// Pass a path as first argument to override, e.g. go run main.go gateway.toml
+	// Pass a path as first argument to override, e.g. go run main.go /path/to/llmgate.toml
 	cfgPath := "llmgate.toml"
 	if len(os.Args) > 1 {
 		cfgPath = os.Args[1]
 	}
 
-	cfg, err := gateway.LoadConfig(cfgPath)
+	cfg, err := server.LoadConfig(cfgPath)
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
 
-	server, err := gateway.New(cfg, gateway.WithLogger(logger))
+	srv, err := server.New(cfg, server.WithLogger(logger))
 	if err != nil {
 		log.Fatalf("server error: %v", err)
 	}
@@ -50,8 +51,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	if err := server.ListenAndServeWithContext(ctx, ""); err != nil {
+	if err := srv.ListenAndServeWithContext(ctx, ""); err != nil {
 		log.Fatalf("serve error: %v", err)
 	}
 }
-

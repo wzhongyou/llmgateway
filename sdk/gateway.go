@@ -16,26 +16,32 @@ type Gateway struct {
 	fallback []string
 }
 
+// New creates a Gateway and auto-loads providers from environment variables.
 func New() *Gateway {
-	g := &Gateway{
-		engine: core.NewEngine(nil),
-	}
-	g.autoLoad()
+	g := &Gateway{engine: core.NewEngine(nil)}
+	g.loadEnv()
 	return g
 }
 
-func (g *Gateway) autoLoad() {
-	// 1. Try llmgate.toml in CWD
-	if data, err := os.ReadFile("llmgate.toml"); err == nil {
-		var cfg core.GatewayConfig
-		if err := toml.Unmarshal(data, &cfg); err == nil {
-			cfg.ApplyEnv()
-			g.InitFromConfig(&cfg)
-			return
-		}
+// NewFromFile creates a Gateway from an explicit config file path.
+func NewFromFile(path string) (*Gateway, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("sdk: read config: %w", err)
 	}
+	var cfg core.GatewayConfig
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("sdk: parse config: %w", err)
+	}
+	cfg.ApplyEnv()
+	g := &Gateway{engine: core.NewEngine(nil)}
+	if err := g.InitFromConfig(&cfg); err != nil {
+		return nil, err
+	}
+	return g, nil
+}
 
-	// 2. Fallback: detect providers from env vars
+func (g *Gateway) loadEnv() {
 	envProviders := map[string]string{
 		"ANTHROPIC_KEY": "anthropic",
 		"DEEPSEEK_KEY":  "deepseek",
@@ -55,7 +61,7 @@ func (g *Gateway) autoLoad() {
 	for env, name := range envProviders {
 		if key := os.Getenv(env); key != "" {
 			cfg := core.ProviderConfig{Name: name, Key: key}
-			if p, err := core.CreateProvider(cfg); err == nil {
+			if p, err := g.engine.CreateProvider(cfg); err == nil {
 				g.engine.Register(p)
 			}
 		}
@@ -64,7 +70,7 @@ func (g *Gateway) autoLoad() {
 
 func (g *Gateway) Use(name, key string) error {
 	cfg := core.ProviderConfig{Name: name, Key: key}
-	p, err := core.CreateProvider(cfg)
+	p, err := g.engine.CreateProvider(cfg)
 	if err != nil {
 		return err
 	}
@@ -73,7 +79,7 @@ func (g *Gateway) Use(name, key string) error {
 }
 
 func (g *Gateway) UseWithConfig(cfg core.ProviderConfig) error {
-	p, err := core.CreateProvider(cfg)
+	p, err := g.engine.CreateProvider(cfg)
 	if err != nil {
 		return err
 	}
@@ -110,6 +116,15 @@ func (g *Gateway) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatRe
 	}
 }
 
+func (g *Gateway) ChatStream(ctx context.Context, req *core.ChatRequest) (<-chan core.StreamChunk, error) {
+	switch {
+	case g.pinnedTo != "":
+		return g.engine.ChatStreamWithProvider(ctx, req, g.pinnedTo)
+	default:
+		return g.engine.ChatStream(ctx, req)
+	}
+}
+
 func (g *Gateway) Snapshot() core.MetricsSnapshot {
 	return g.engine.Snapshot()
 }
@@ -121,6 +136,14 @@ func (g *Gateway) ProviderNames() []string {
 		names[i] = p.Name()
 	}
 	return names
+}
+
+func (g *Gateway) Models() []string {
+	var models []string
+	for _, p := range g.engine.Providers() {
+		models = append(models, p.Models()...)
+	}
+	return models
 }
 
 func (g *Gateway) Engine() *core.Engine {
@@ -144,7 +167,7 @@ func (g *Gateway) InitFromConfig(cfg *core.GatewayConfig) error {
 			BaseURL:      pc.BaseURL,
 			DefaultModel: pc.DefaultModel,
 		}
-		p, err := core.CreateProvider(pcfg)
+		p, err := g.engine.CreateProvider(pcfg)
 		if err != nil {
 			return fmt.Errorf("sdk: %w", err)
 		}

@@ -16,7 +16,7 @@ AI assistant context for this project. Architecture and API are in [docs/design.
 |-------|---------|----------------|
 | `core/` | Zero — no `log` calls ever | Return typed errors with provider prefix |
 | `sdk/` | Zero | Return errors |
-| `gateway/` | `slog` structured logging only | Log at middleware boundary, not in handlers |
+| `server/` | `slog` structured logging only | Log at middleware boundary, not in handlers |
 
 Violations of the zero-logging rule in `core/` or `sdk/` are bugs, not style issues.
 
@@ -60,12 +60,12 @@ Reference implementation for OpenAI-compatible APIs: [core/providers/glm/glm.go]
 Reference for custom API format: [core/providers/anthropic/anthropic.go](core/providers/anthropic/anthropic.go) or [core/providers/gemini/gemini.go](core/providers/gemini/gemini.go).  
 Full checklist: [docs/adapter-template.md](docs/adapter-template.md).
 
-Register in `sdk/gateway.go` `autoLoad()` env var map and add to both example files.
+Register in `sdk/gateway.go` `loadEnv()` env var map and add to both example files.
 
 ---
 
 ## Access log fields
 
-The gateway middleware logs one line per request. For `/v1/chat`, the log includes LLM-specific fields populated via a `*reqMeta` pointer stored in request context — handlers write to it, middleware reads it at the end. Do not move this logging into handlers or split it across multiple log calls.
+The server middleware logs one line per request. For `/v1/chat`, the log includes LLM-specific fields populated via a `*reqMeta` pointer stored in request context — handlers write to it, middleware reads it at the end. Do not move this logging into handlers or split it across multiple log calls.
 
 Fields logged: `request_id`, `method`, `path`, `status`, `latency_ms`, `remote_addr`, `provider`, `model`, `input_tokens`, `output_tokens`, `reasoning_tokens`.

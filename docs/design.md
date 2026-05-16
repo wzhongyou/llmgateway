@@ -4,14 +4,18 @@
 
 ```
 llmgate/
-├── core/                 # Core: provider interface, engine, strategies, metrics
-│   ├── types.go          # ChatRequest, ChatResponse, Message, Usage
+├── core/                 # Core: provider interface, engine, strategies, metrics, errors
+│   ├── types.go          # ChatRequest, ChatResponse, Message, Usage, StreamChunk
 │   ├── provider.go       # Provider interface
 │   ├── strategy.go       # Strategy interface
 │   ├── metrics.go        # MetricsSnapshot, ProviderStats
 │   ├── metrics_store.go  # In-memory metrics implementation
-│   ├── engine.go         # Routing engine: select → try → fallback
-│   ├── registry.go       # Provider registry (RegisterProvider / CreateProvider)
+│   ├── engine.go         # Routing engine: select → retry → fallback, circuit breaker
+│   ├── errors.go         # ProviderError, MultiError
+│   ├── circuit_breaker.go # Per-provider circuit breaker
+│   ├── retry.go          # Exponential backoff + jitter retry
+│   ├── stream.go         # OpenAI SSE stream parser (shared by 12 providers)
+│   ├── registry.go       # Global provider factory registry (RegisterProvider / CreateProvider)
 │   ├── config.go         # GatewayConfig, env var expansion, validation
 │   ├── strategies.go     # Built-in: PrimaryFirst, Latency, TimeBased
 │   └── providers/        # Provider adapters (one directory per provider)
@@ -29,15 +33,16 @@ llmgate/
 │       ├── openai/       # OpenAI — OpenAI-compatible
 │       ├── qwen/         # Alibaba Qwen — OpenAI-compatible
 │       └── stepfun/      # StepFun — OpenAI-compatible
-├── sdk/                  # Go SDK: fluent API (New, Use, With, Fallback, etc.)
-│   └── gateway.go        # Gateway struct + auto-load logic
-├── gateway/              # HTTP server wrapping core
-│   ├── server.go         # HTTP handlers, middleware, structured logging
-│   └── config.go         # TOML config loader
-├── llmgate.go         # Top-level type aliases + New()
+├── sdk/                  # Go SDK: fluent API (New, NewFromFile, Use, With, Fallback, etc.)
+│   ├── gateway.go        # Gateway struct + env-var loading + InitFromConfig
+│   └── gateway_integration_test.go
+├── server/               # HTTP server wrapping the SDK
+│   ├── server.go         # HTTP handlers, middleware, auth, rate-limit, hot reload
+│   └── config.go         # server.Config, ServerConfig, LoadConfig
+├── llmgate.go            # Top-level type aliases + New() / NewFromFile()
 ├── examples/             # Usage examples
-│   ├── sdk/              # SDK example
-│   └── gateway/          # Standalone gateway example
+│   ├── sdk/              # SDK example (sync + stream)
+│   └── server/           # Standalone server example
 └── docs/                 # Documentation
 ```
 
@@ -45,19 +50,19 @@ llmgate/
 
 ## Protocol Families
 
-Providers are categorized by the API protocol they speak. The `Provider` interface abstracts all of them into a single `Chat(ctx, req) (*ChatResponse, error)` method.
+Providers are categorized by the API protocol they speak. The `Provider` interface abstracts all of them.
 
 | Protocol | Providers | Endpoint | Auth |
 |----------|-----------|----------|------|
 | OpenAI-compatible | deepseek, ernie, glm, grok, hunyuan, kimi, llama, mimo, minimax, openai, qwen, stepfun | `POST /chat/completions` | `Bearer {key}` |
-| Anthropic Messages | anthropic | `POST /messages` | `x-api-key: {key}`, `anthropic-version` header, system as top-level field |
-| Gemini generateContent | gemini | `POST /models/{model}:generateContent` | `x-goog-api-key: {key}`, model in URL path |
+| Anthropic Messages | anthropic | `POST /messages` | `x-api-key: {key}`, `anthropic-version` header |
+| Gemini generateContent | gemini | `POST /models/{model}:generateContent` | `x-goog-api-key: {key}` |
 
 ---
 
 ## Core Interfaces
 
-### ChatRequest / ChatResponse / Message / Usage
+### ChatRequest / ChatResponse / StreamChunk
 
 ```go
 // core/types.go
@@ -89,6 +94,13 @@ type Usage struct {
     ReasoningTokens int
     TotalTokens     int
 }
+
+type StreamChunk struct {
+    Content string
+    Model   string
+    Usage   *Usage // non-nil only on the final chunk
+    Error   error
+}
 ```
 
 ### ProviderConfig
@@ -103,8 +115,8 @@ type ProviderConfig struct {
 }
 ```
 
-- `BaseURL` — optional; each provider has a built-in default. Override for proxies, private deployments, or third-party resellers (e.g. GLM via Alibaba Bailian).
-- `DefaultModel` — optional; used when `req.Model` is empty. Each provider has a built-in default.
+- `BaseURL` — optional; each provider has a built-in default. Override for proxies, private deployments, or third-party resellers.
+- `DefaultModel` — optional; used when `req.Model` is empty.
 
 ### Provider
 
@@ -113,36 +125,42 @@ type ProviderConfig struct {
 type Provider interface {
     Name() string
     Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error)
+    ChatStream(ctx context.Context, req *ChatRequest) (<-chan StreamChunk, error)
     Models() []string
 }
 ```
 
-Each provider is registered in `core/registry.go` via `init()`:
+Each provider is registered via `init()` in its own package:
 
 ```go
-// core/providers/deepseek/deepseek.go
 func init() {
     core.RegisterProvider("deepseek", func(cfg core.ProviderConfig) (core.Provider, error) {
-        baseURL := cfg.BaseURL
-        if baseURL == "" {
-            baseURL = defaultBaseURL
-        }
-        defaultModel := cfg.DefaultModel
-        if defaultModel == "" {
-            defaultModel = "deepseek-v4-flash"
-        }
-        return &Provider{
-            key:          cfg.Key,
-            baseURL:      baseURL,
-            defaultModel: defaultModel,
-        }, nil
+        ...
+        return &Provider{key: cfg.Key, baseURL: baseURL, defaultModel: defaultModel}, nil
     })
 }
 ```
 
+### ProviderError
+
+All providers return `*ProviderError` for structured error handling:
+
+```go
+// core/errors.go
+type ProviderError struct {
+    Provider   string
+    StatusCode int    // HTTP status; 0 for network/parse errors
+    Message    string
+    Retryable  bool   // true for 5xx, 429, network errors
+    Cause      error
+}
+```
+
+`MultiError` aggregates failures from multiple providers and implements `errors.Unwrap() []error`.
+
 ### Strategy
 
-`Select` returns an **ordered** provider list. The engine tries them in sequence until one succeeds — this naturally supports fallback chains without re-invoking the strategy on each failure.
+`Select` returns an **ordered** provider list. The engine tries them in sequence until one succeeds.
 
 ```go
 // core/strategy.go
@@ -157,9 +175,7 @@ type Strategy interface {
 |----------|-------------|
 | `PrimaryFirstStrategy` | Primary → fallback list → remaining providers |
 | `LatencyStrategy` | Wraps another strategy, filters providers over latency threshold |
-| `TimeBasedStrategy` | Picks day/night provider based on current hour |
-
-Strategies can be stacked (e.g., `LatencyStrategy` wrapping `PrimaryFirstStrategy`).
+| `TimeBasedStrategy` | Picks day/night provider by hour; `SetNowFn` for testability |
 
 ### MetricsSnapshot / ProviderStats
 
@@ -170,9 +186,11 @@ type MetricsSnapshot struct {
 }
 
 type ProviderStats struct {
+    TotalCalls   int64
+    ErrorCalls   int64
     ErrorRate    float64
     AvgLatencyMs float64
-    Available    bool
+    Available    bool  // false when error rate == 1.0
 }
 ```
 
@@ -182,63 +200,88 @@ type ProviderStats struct {
 
 ```go
 // core/engine.go
-type Engine struct { ... }
-
 func NewEngine(strategy Strategy) *Engine
 func (e *Engine) Register(p Provider)
+func (e *Engine) RegisterFactory(name string, factory func(ProviderConfig) (Provider, error))
+func (e *Engine) CreateProvider(cfg ProviderConfig) (Provider, error)
 func (e *Engine) SetStrategy(s Strategy)
-func (e *Engine) Chat(ctx, req) (*ChatResponse, error)      // strategy-driven
-func (e *Engine) ChatWithProvider(ctx, req, name)            // pinned
-func (e *Engine) ChatWithFallback(ctx, req, names)           // explicit chain
+func (e *Engine) GetProvider(name string) (Provider, bool)
+func (e *Engine) Providers() []Provider
+func (e *Engine) Chat(ctx, req) (*ChatResponse, error)
+func (e *Engine) ChatWithProvider(ctx, req, name) (*ChatResponse, error)
+func (e *Engine) ChatWithFallback(ctx, req, names) (*ChatResponse, error)
+func (e *Engine) ChatStream(ctx, req) (<-chan StreamChunk, error)
+func (e *Engine) ChatStreamWithProvider(ctx, req, name) (<-chan StreamChunk, error)
 func (e *Engine) Snapshot() MetricsSnapshot
 ```
 
-The engine records per-provider metrics (success/failure, latency) on every call.
+**Reliability features:**
+- **Circuit breaker** — 5 consecutive failures opens the circuit; 30s recovery timeout; per-provider state stored in `Engine.breakers`
+- **Retry** — up to 2 attempts per provider for `Retryable` errors; exponential backoff (100ms base) with jitter
+- **Error aggregation** — all provider failures collected into `*MultiError`
+
+`RegisterFactory` registers a local factory override on this engine instance, used to inject mock providers in unit tests without touching the global registry.
 
 ---
 
 ## SDK API
 
 ```go
-gw := llmgate.New()       // auto-loads llmgate.toml or env vars
-gw.Use("deepseek", "...")    // manual registration
-gw.With("anthropic")         // pin to provider
-gw.Fallback("a", "b")        // explicit chain
-gw.UseStrategy(&MyStrategy{}) // custom strategy
+gw := llmgate.New()                    // loads from env vars only
+gw, err := llmgate.NewFromFile(path)   // loads from TOML file + env var expansion
+gw.Use("deepseek", key)                // register provider manually (returns error)
+gw.UseWithConfig(core.ProviderConfig{...})
+gw.With("anthropic")                   // pin to provider
+gw.Fallback("a", "b")                  // explicit chain (Chat only; ignored by ChatStream)
+gw.UseStrategy(&MyStrategy{})          // custom strategy
+gw.Models()                            // list all model IDs across providers
+gw.ProviderNames()                     // list registered provider names
+gw.Snapshot()                          // metrics snapshot
+gw.Chat(ctx, req)                      // blocking call → *ChatResponse
+gw.ChatStream(ctx, req)               // streaming → <-chan StreamChunk
 ```
 
-**Auto-load behavior** (`sdk/gateway.go`):
+**`llmgate.New()`** reads only environment variables:
+`ANTHROPIC_KEY`, `DEEPSEEK_KEY`, `ERNIE_KEY`, `GEMINI_KEY`, `GLM_KEY`, `GROK_KEY`, `HUNYUAN_KEY`, `KIMI_KEY`, `LLAMA_KEY`, `MIMO_KEY`, `MINIMAX_KEY`, `OPENAI_KEY`, `QWEN_KEY`, `STEPFUN_KEY`
 
-1. Read `llmgate.toml` from CWD (TOML format, with `${ENV}` expansion)
-2. Fallback: scan env vars (`ANTHROPIC_KEY`, `DEEPSEEK_KEY`, `ERNIE_KEY`, `GEMINI_KEY`, `GLM_KEY`, `GROK_KEY`, `HUNYUAN_KEY`, `KIMI_KEY`, `LLAMA_KEY`, `MIMO_KEY`, `MINIMAX_KEY`, `OPENAI_KEY`, `QWEN_KEY`, `STEPFUN_KEY`)
-3. If neither found, gateway starts empty — user calls `gw.Use()` manually
+**`llmgate.NewFromFile(path)`** reads a TOML config file with `${VAR}` env expansion.
 
-**Precedence (highest to lowest):**
+**Call precedence for `Chat` (highest to lowest):**
 1. `.Fallback(...)` — explicit in-code chain
 2. `.With(...)` — pin to a specific provider
 3. `UseStrategy(...)` — custom strategy
-4. Default built-in strategy (primary → fallback list from config)
+4. Default built-in strategy (primary → fallback from config)
 5. Registration order (no strategy configured)
+
+**`ChatStream` precedence:** same as above except `.Fallback(...)` is not supported — stream fallback cannot happen after the channel is opened.
 
 ---
 
 ## Gateway Mode
 
-### Config
+### Config (`server.Config`)
 
-TOML format with `${VAR}` environment variable substitution (handled by `core/config.go` at startup):
+```go
+// server/config.go
+type Config struct {
+    Providers []core.ProviderConfig `toml:"providers"`
+    Strategy  core.StrategyConfig   `toml:"strategy"`
+    Server    ServerConfig          `toml:"server"`
+}
+
+type ServerConfig struct {
+    ListenAddr   string   `toml:"listen_addr"`
+    APIKeys      []string `toml:"api_keys"`      // Bearer token auth; empty = no auth
+    RateLimitRPM int      `toml:"rate_limit_rpm"` // global RPM; 0 = unlimited
+}
+```
+
+TOML example:
 
 ```toml
 [[providers]]
 name = "glm"
 key = "${GLM_KEY}"
-default_model = "glm-5.1"
-# base_url = "https://open.bigmodel.cn/api/paas/v4"
-
-[[providers]]
-name = "deepseek"
-key = "${DEEPSEEK_KEY}"
-default_model = "deepseek-v4-flash"
 
 [strategy]
 primary = "glm"
@@ -247,74 +290,67 @@ latency_threshold_ms = 5000
 
 [server]
 listen_addr = ":8080"
+api_keys = ["secret-key-1"]
+rate_limit_rpm = 600
 ```
 
 ### HTTP Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1/chat` | Chat completion (supports `?provider=` and `?fallback=`) |
-| `GET` | `/v1/models` | List available models |
-| `GET` | `/health` | Health check |
+| `POST` | `/v1/chat` | Chat completion — sync or SSE stream (`"stream": true`) |
+| `GET` | `/v1/models` | List available models per provider |
+| `GET` | `/health` | Liveness probe (always 200) |
+| `GET` | `/health/live` | Liveness probe (always 200) |
+| `GET` | `/health/ready` | Readiness probe (503 when all providers failed) |
+| `GET` | `/metrics` | Provider metrics in Prometheus text format |
 
-### Request/Response
+`/v1/chat` supports `?provider=name` to pin a provider and `?fallback=a&fallback=b` for an explicit chain.
 
-```json
-// POST /v1/chat
-{
-  "messages": [{"role": "user", "content": "Hello"}],
-  "model": "deepseek-v4-flash",
-  "system": "You are helpful.",
-  "temperature": 0.7,
-  "max_tokens": 1024
-}
+### Streaming
 
-// Response
-{
-  "content": "Hello! How can I help?",
-  "model": "deepseek-v4-flash",
-  "provider": "deepseek",
-  "usage": {
-    "input_tokens": 10,
-    "output_tokens": 5,
-    "reasoning_tokens": 0,
-    "total_tokens": 15
-  },
-  "latency": 1234567890
-}
+Set `"stream": true` in the request body. The response is an SSE stream:
+
+```
+data: {"Content":"Hello","Model":"deepseek-v4-flash"}
+data: {"Content":" world"}
+data: {"Content":"","Usage":{"InputTokens":5,"OutputTokens":10,...}}
+data: [DONE]
 ```
 
 ### Observability
 
-Every request is logged as a single structured JSON line via `log/slog`. The chat endpoint includes LLM-specific fields:
+Every request logs one structured JSON line. The chat endpoint includes LLM-specific fields:
 
 ```json
-{"level":"INFO","msg":"request","request_id":"...","method":"POST","path":"/v1/chat",
+{"level":"INFO","msg":"request","request_id":"a3f2...","method":"POST","path":"/v1/chat",
  "status":200,"latency_ms":312.5,"remote_addr":"...",
- "provider":"glm","model":"glm-5.1","input_tokens":15,"output_tokens":42,
- "reasoning_tokens":0}
+ "provider":"glm","model":"glm-5.1","input_tokens":15,"output_tokens":42,"reasoning_tokens":0}
 ```
 
-Inject a custom logger via `gateway.WithLogger(l *slog.Logger)`.
+`GET /metrics` returns Prometheus text exposition format:
 
----
+```
+# TYPE llmgate_requests_total counter
+llmgate_requests_total{provider="glm"} 42
+# TYPE llmgate_errors_total counter
+llmgate_errors_total{provider="glm"} 1
+# TYPE llmgate_provider_avg_latency_ms gauge
+llmgate_provider_avg_latency_ms{provider="glm"} 312.500
+# TYPE llmgate_provider_available gauge
+llmgate_provider_available{provider="glm"} 1
+```
 
-## Metrics Storage
+### Hot Reload
 
-| Mode | Storage | Notes |
-|------|---------|-------|
-| SDK | In-memory | per-process, lost on restart |
-| Gateway (single node) | SQLite | zero extra dependencies (planned) |
-| Gateway (multi-node) | Redis | configure via `[metrics] backend = "redis"` (planned) |
-
-Currently only in-memory is implemented (`core/metrics_store.go`). Access via `gw.Snapshot()`.
+`server.WatchConfig(ctx, cfgPath)` starts a background goroutine that polls the config file every 10 seconds. When the file's mtime changes, it atomically swaps the gateway instance — no restart required.
 
 ---
 
 ## Adding a Provider
 
 1. Create a directory under `core/providers/<name>/`
-2. Implement the `Provider` interface
+2. Implement the `Provider` interface (including `ChatStream`)
 3. Register via `init()`:
    ```go
    func init() {
@@ -324,5 +360,5 @@ Currently only in-memory is implemented (`core/metrics_store.go`). Access via `g
    }
    ```
 4. Import the package with `_` in the consuming code
-5. Add the provider to the env-var map in `sdk/gateway.go`
+5. Add the provider to the env-var map in `sdk/gateway.go` `loadEnv()`
 6. See [adapter-template.md](adapter-template.md) for a complete example

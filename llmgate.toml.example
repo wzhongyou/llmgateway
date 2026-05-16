@@ -1,6 +1,7 @@
 # llmgate configuration
-# SDK auto-loads this file from CWD, or set path manually via GW_CONFIG
-# cp llmgate.toml.example llmgate.toml
+# cp llmgate.toml.example llmgate.toml, then fill in API keys
+# SDK: load explicitly via llmgate.NewFromFile("llmgate.toml")
+# Server: go run ./examples/server [path/to/llmgate.toml]
 #
 # Model can be specified at request time (req.Model) or configured per provider
 # below as default_model. If neither is set, each provider uses its built-in default:
@@ -99,3 +100,5 @@ latency_threshold_ms = 5000
 
 [server]
 listen_addr = ":8080"
+# api_keys = ["your-secret-key-1", "your-secret-key-2"]  # Bearer token auth; empty = no auth
+# rate_limit_rpm = 600  # global requests per minute; 0 = unlimited

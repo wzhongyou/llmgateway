@@ -59,9 +59,11 @@ func (m *metricsStore) snapshot() MetricsSnapshot {
 			avgLatency = float64(s.totalLatency.Microseconds()) / float64(s.totalCalls) / 1000.0
 		}
 		ps[name] = ProviderStats{
+			TotalCalls:   s.totalCalls,
+			ErrorCalls:   s.errorCalls,
 			ErrorRate:    errRate,
 			AvgLatencyMs: avgLatency,
-			Available:    true,
+			Available:    s.totalCalls == 0 || errRate < 1.0,
 		}
 	}
 	return MetricsSnapshot{Providers: ps}

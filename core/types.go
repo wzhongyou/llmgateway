@@ -30,3 +30,10 @@ type Usage struct {
 	ReasoningTokens int
 	TotalTokens     int
 }
+
+type StreamChunk struct {
+	Content string
+	Model   string
+	Usage   *Usage // non-nil only on the final chunk
+	Error   error
+}

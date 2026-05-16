@@ -108,6 +108,15 @@ reply, _ := gw.With("anthropic").Chat(ctx, req)
 // 降级链
 reply, _ := gw.Fallback("anthropic", "deepseek").Chat(ctx, req)
 
+// 流式输出（SSE）
+ch, err := gw.ChatStream(ctx, &llmgate.ChatRequest{
+    Messages: []llmgate.Message{{Role: "user", Content: "你好"}},
+})
+for chunk := range ch {
+    if chunk.Error != nil { break }
+    fmt.Print(chunk.Content)
+}
+
 // 指标
 snap := gw.Snapshot()
 fmt.Printf("DeepSeek 延迟: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs)
@@ -124,13 +133,13 @@ fmt.Printf("DeepSeek 延迟: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs
 
 ---
 
-## Gateway 模式
+## Server 模式
 
 独立部署 HTTP 服务，多语言接入：
 
 ```bash
 cp llmgate.toml.example llmgate.toml
-go run examples/gateway/main.go
+go run examples/server/main.go
 ```
 
 ```toml
@@ -174,11 +183,11 @@ listen_addr = ":8080"
  "input_tokens":15,"output_tokens":42,"reasoning_tokens":0}
 ```
 
-Gateway 模式下注入自定义 logger：
+Server 模式下注入自定义 logger：
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-srv, _ := gateway.New(cfg, gateway.WithLogger(logger))
+srv, _ := server.New(cfg, server.WithLogger(logger))
 ```
 
 ---
@@ -214,7 +223,7 @@ srv, _ := gateway.New(cfg, gateway.WithLogger(logger))
 llmgate/
 ├── core/                 # Provider 接口、引擎、策略、指标
 ├── sdk/                  # Go SDK
-├── gateway/              # HTTP 服务
+├── server/               # HTTP 服务
 ├── docs/                 # 设计文档
 └── examples/             # 使用示例
 ```
@@ -230,7 +239,7 @@ cp llmgate.toml.example llmgate.toml
 # export GLM_KEY=xxx  MINIMAX_KEY=xxx  DEEPSEEK_KEY=xxx
 
 # 2. 运行集成测试
-go test ./sdk/ ./gateway/ -v -count=1
+go test ./sdk/ ./server/ -v -count=1
 ```
 
 未配置 key 时测试自动跳过。
@@ -242,7 +251,7 @@ go test ./sdk/ ./gateway/ -v -count=1
 - [x] **v0.1** — Go SDK + DeepSeek + 基础降级策略 + 指标采集
 - [x] **v0.2** — 智谱（GLM）+ MiniMax + 结构化日志（slog）
 - [x] **v0.3** — 14 家供应商 / 3 套协议全覆盖，推理 token 追踪，默认模型可配置
-- [ ] **v1.0** — Streaming + 生产级路由策略（熔断、限流、重试）
+- [x] **v1.0** — Streaming（SSE）+ 生产级路由策略（熔断、限流、重试）
 - [ ] **v1.5** — 可视化控制台：延迟分布、Prompt 版本管理、模型对比评估
 
 ---

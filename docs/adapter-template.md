@@ -21,7 +21,12 @@ Example: `core/providers/openai/openai.go`
 package openai
 
 import (
+    "bytes"
     "context"
+    "encoding/json"
+    "io"
+    "net/http"
+
     "github.com/wzhongyou/llmgate/core"
 )
 
@@ -59,35 +64,81 @@ func (p *Provider) Models() []string {
 }
 
 func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-    // 1. Convert core.ChatRequest to provider-specific API format
+    // 1. Convert core.ChatRequest to provider-specific format
     // 2. Make HTTP request
     // 3. Parse response into core.ChatResponse
+    // Return &core.ProviderError{...} for all errors (see Step 3)
+    return nil, nil
+}
+
+func (p *Provider) ChatStream(ctx context.Context, req *core.ChatRequest) (<-chan core.StreamChunk, error) {
+    // Same as Chat but with "stream": true and delegates to core.OpenAIStream
+    // For custom formats (Anthropic, Gemini) parse SSE manually
     return nil, nil
 }
 ```
 
 ---
 
-## Step 3: Conversion patterns
+## Step 3: Error handling
 
-### OpenAI-compatible API
-
-For providers that follow the OpenAI API format (DeepSeek, Groq, Mistral, Qwen, etc.):
+Always return `*core.ProviderError` — never `fmt.Errorf`. Set `Retryable: true` for network errors, 5xx, and 429:
 
 ```go
-// Request format
-type chatReq struct {
-    Model    string    `json:"model"`
-    Messages []message `json:"messages"`
-    Stream   bool      `json:"stream"`
+// Network error (retryable)
+resp, err := p.client.Do(httpReq)
+if err != nil {
+    return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Retryable: true, Cause: err}
 }
 
-type message struct {
-    Role    string `json:"role"`
-    Content string `json:"content"`
+// HTTP error
+if resp.StatusCode != http.StatusOK {
+    body, _ := io.ReadAll(resp.Body)
+    return nil, &core.ProviderError{
+        Provider:   "openai",
+        StatusCode: resp.StatusCode,
+        Message:    string(body),
+        Retryable:  resp.StatusCode >= 500 || resp.StatusCode == 429,
+    }
 }
 
-// Response format
+// Parse error (not retryable)
+if err := json.Unmarshal(body, &result); err != nil {
+    return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Cause: err}
+}
+```
+
+The engine uses `Retryable` to decide whether to retry before falling back to the next provider.
+
+---
+
+## Step 4: Conversion patterns
+
+### OpenAI-compatible API (sync + stream)
+
+For providers that follow the OpenAI API format:
+
+```go
+// Chat: set "stream": false, call /chat/completions, parse choices[0].message.content
+// ChatStream: set "stream": true, keep body open, call core.OpenAIStream(ctx, resp.Body)
+
+func (p *Provider) ChatStream(ctx context.Context, req *core.ChatRequest) (<-chan core.StreamChunk, error) {
+    // ... build payload with "stream": true ...
+    resp, err := p.client.Do(httpReq)
+    if err != nil {
+        return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Retryable: true, Cause: err}
+    }
+    if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(resp.Body)
+        resp.Body.Close()
+        return nil, &core.ProviderError{Provider: "openai", StatusCode: resp.StatusCode, Message: string(body), Retryable: resp.StatusCode >= 500 || resp.StatusCode == 429}
+    }
+    return core.OpenAIStream(ctx, resp.Body), nil
+}
+```
+
+OpenAI-compatible response format:
+```go
 type chatResp struct {
     Choices []struct {
         Message struct {
@@ -108,11 +159,11 @@ type chatResp struct {
 
 ### Non-OpenAI API
 
-For providers with their own API format (Anthropic, Google, etc.), adapt `ChatRequest` to their format accordingly.
+For providers with their own API format (Anthropic, Gemini), parse SSE manually in a goroutine. See `core/providers/anthropic/anthropic.go` and `core/providers/gemini/gemini.go` as reference.
 
 ---
 
-## Step 4: Token mapping
+## Step 5: Token mapping
 
 Map provider-specific usage fields into the unified `core.Usage` struct:
 
@@ -127,7 +178,7 @@ core.Usage{
 
 ---
 
-## Step 5: Registration
+## Step 6: Registration
 
 Consumers import your provider with a blank import:
 
@@ -135,16 +186,10 @@ Consumers import your provider with a blank import:
 import _ "github.com/wzhongyou/llmgate/core/providers/openai"
 ```
 
-Also add the provider to the env-var map in `sdk/gateway.go`:
+Also add the provider to the env-var map in `sdk/gateway.go` `loadEnv()`:
 
 ```go
 "OPENAI_KEY": "openai",
-```
-
-This triggers the `init()` function which registers the provider. Users can then:
-
-```go
-gw.Use("openai", os.Getenv("OPENAI_KEY"))
 ```
 
 ---
@@ -154,10 +199,13 @@ gw.Use("openai", os.Getenv("OPENAI_KEY"))
 - [ ] `Name()` returns a unique, lowercase identifier
 - [ ] `Models()` lists all supported models
 - [ ] `Chat()` handles `req.System` → system prompt
-- [ ] `Chat()` uses `req.Model` if set, falls back to config `DefaultModel` or built-in default
+- [ ] `Chat()` uses `req.Model` if set, falls back to `DefaultModel` or built-in default
 - [ ] `Chat()` respects `req.MaxTokens`, `req.Temperature`
 - [ ] `Chat()` uses `baseURL` from config if set, falls back to built-in default
 - [ ] `Chat()` parses reasoning tokens when available
 - [ ] `Chat()` passes context to HTTP request
-- [ ] Error messages include provider name for debugging
+- [ ] `Chat()` returns `*core.ProviderError` for all errors (with correct `Retryable` flag)
+- [ ] `ChatStream()` implemented — OpenAI-compatible providers call `core.OpenAIStream(ctx, resp.Body)`
+- [ ] `ChatStream()` also returns `*core.ProviderError` before the channel is opened
 - [ ] `init()` registers with `core.RegisterProvider`
+- [ ] Provider added to `loadEnv()` map in `sdk/gateway.go`

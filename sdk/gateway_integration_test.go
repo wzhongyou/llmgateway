@@ -22,7 +22,11 @@ func requireProvider(t *testing.T, gw *llmgate.Gateway, name string) {
 
 func newGateway(t *testing.T) *llmgate.Gateway {
 	t.Helper()
-	return llmgate.New()
+	gw, err := llmgate.NewFromFile("../llmgate.toml")
+	if err != nil {
+		gw = llmgate.New() // fallback to env vars if no config file
+	}
+	return gw
 }
 
 func TestSDK_DeepSeek_Chat(t *testing.T) {
@@ -177,6 +181,41 @@ func TestSDK_GLM_Fallback(t *testing.T) {
 		t.Fatalf("Fallback Chat: %v", err)
 	}
 	t.Logf("[Fallback] Provider: %s, Content: %s", resp.Provider, resp.Content)
+}
+
+func TestSDK_DeepSeek_ChatStream(t *testing.T) {
+	gw := newGateway(t)
+	requireProvider(t, gw, "deepseek")
+
+	ch, err := gw.With("deepseek").ChatStream(context.Background(), &llmgate.ChatRequest{
+		Messages:  []llmgate.Message{{Role: "user", Content: "Count to 3."}},
+		MaxTokens: intPtr(50),
+	})
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+
+	var content string
+	var chunks int
+	var lastUsage *llmgate.Usage
+	for chunk := range ch {
+		if chunk.Error != nil {
+			t.Fatalf("stream error: %v", chunk.Error)
+		}
+		content += chunk.Content
+		if chunk.Usage != nil {
+			lastUsage = chunk.Usage
+		}
+		chunks++
+	}
+
+	if content == "" {
+		t.Error("expected non-empty content")
+	}
+	if chunks < 2 {
+		t.Errorf("expected multiple chunks, got %d", chunks)
+	}
+	t.Logf("chunks=%d content=%q usage=%+v", chunks, content, lastUsage)
 }
 
 func intPtr(i int) *int { return &i }

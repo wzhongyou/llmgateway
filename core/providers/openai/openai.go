@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 
@@ -77,29 +76,29 @@ func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatR
 
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("openai: %w", err)
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Cause: err}
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("openai: %w", err)
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Cause: err}
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+p.key)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("openai: %w", err)
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Retryable: true, Cause: err}
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("openai: %w", err)
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Retryable: true, Cause: err}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openai: HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, &core.ProviderError{Provider: "openai", StatusCode: resp.StatusCode, Message: string(respBody), Retryable: resp.StatusCode >= 500 || resp.StatusCode == 429}
 	}
 
 	var result struct {
@@ -119,11 +118,11 @@ func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatR
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("openai: %w", err)
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Cause: err}
 	}
 
 	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("openai: no choices in response")
+		return nil, &core.ProviderError{Provider: "openai", Message: "no choices in response"}
 	}
 
 	reasoningTokens := 0
@@ -141,5 +140,60 @@ func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatR
 			TotalTokens:     result.Usage.TotalTokens,
 		},
 	}, nil
+}
+
+func (p *Provider) ChatStream(ctx context.Context, req *core.ChatRequest) (<-chan core.StreamChunk, error) {
+	type msg struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	var messages []msg
+	if req.System != "" {
+		messages = append(messages, msg{Role: "system", Content: req.System})
+	}
+	for _, m := range req.Messages {
+		messages = append(messages, msg{Role: m.Role, Content: m.Content})
+	}
+
+	model := req.Model
+	if model == "" {
+		model = p.defaultModel
+	}
+
+	body := map[string]interface{}{
+		"model":    model,
+		"messages": messages,
+		"stream":   true,
+	}
+	if req.MaxTokens != nil {
+		body["max_tokens"] = *req.MaxTokens
+	}
+	if req.Temperature != nil {
+		body["temperature"] = *req.Temperature
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Cause: err}
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		p.baseURL+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Cause: err}
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+p.key)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return nil, &core.ProviderError{Provider: "openai", Message: err.Error(), Retryable: true, Cause: err}
+	}
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, &core.ProviderError{Provider: "openai", StatusCode: resp.StatusCode, Message: string(errBody), Retryable: resp.StatusCode >= 500 || resp.StatusCode == 429}
+	}
+	return core.OpenAIStream(ctx, resp.Body), nil
 }
 
