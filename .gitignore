@@ -1,6 +1,5 @@
-# Local config (contains API keys, do not commit)
+# Local config (do not commit)
 llmgate.toml
-TODO.md 
 
 # Build artifacts
 /bin/

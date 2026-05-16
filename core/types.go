@@ -2,6 +2,28 @@ package core
 
 import "time"
 
+type Tool struct {
+	Type     string       `json:"type"` // "function"
+	Function ToolFunction `json:"function"`
+}
+
+type ToolFunction struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	Parameters  interface{} `json:"parameters,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"` // "function"
+	Function FunctionCall `json:"function"`
+}
+
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON string
+}
+
 type ChatRequest struct {
 	Messages    []Message
 	Model       string
@@ -9,19 +31,25 @@ type ChatRequest struct {
 	Temperature *float64
 	MaxTokens   *int
 	Stream      bool
+	Tools       []Tool      `json:"tools,omitempty"`
+	ToolChoice  interface{} `json:"tool_choice,omitempty"`
 }
 
 type Message struct {
-	Role    string // "user" | "assistant" | "system"
-	Content string
+	Role       string     `json:"role"` // "user" | "assistant" | "system" | "tool"
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`  // set when assistant calls tools
+	ToolCallID string     `json:"tool_call_id,omitempty"` // set when role=="tool"
 }
 
 type ChatResponse struct {
-	Content  string
-	Model    string
-	Provider string
-	Usage    Usage
-	Latency  time.Duration
+	Content      string
+	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
+	FinishReason string     `json:"finish_reason,omitempty"`
+	Model        string
+	Provider     string
+	Usage        Usage
+	Latency      time.Duration
 }
 
 type Usage struct {
@@ -32,8 +60,10 @@ type Usage struct {
 }
 
 type StreamChunk struct {
-	Content string
-	Model   string
-	Usage   *Usage // non-nil only on the final chunk
-	Error   error
+	Content      string
+	ToolCalls    []ToolCall `json:"tool_calls,omitempty"` // non-nil only on final tool_calls chunk
+	FinishReason string     `json:"finish_reason,omitempty"`
+	Model        string
+	Usage        *Usage // non-nil only on the final chunk
+	Error        error
 }

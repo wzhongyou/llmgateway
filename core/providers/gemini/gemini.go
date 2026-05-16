@@ -16,6 +16,7 @@ import (
 const defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 
 func init() {
+	core.RegisterProviderEnv("GEMINI_KEY", "gemini")
 	core.RegisterProvider("gemini", func(cfg core.ProviderConfig) (core.Provider, error) {
 		baseURL := cfg.BaseURL
 		if baseURL == "" {
@@ -46,37 +47,110 @@ func (p *Provider) Models() []string {
 	return []string{"gemini-3.1-pro", "gemini-3.1-flash"}
 }
 
-func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-	type part struct {
-		Text string `json:"text"`
-	}
-	type geminiContent struct {
-		Parts []part `json:"parts"`
-		Role  string `json:"role"`
-	}
+type geminiPart struct {
+	Text             string                 `json:"text,omitempty"`
+	FunctionCall     *geminiFunctionCall    `json:"functionCall,omitempty"`
+	FunctionResponse *geminiFuncResponse    `json:"functionResponse,omitempty"`
+}
+
+type geminiFunctionCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args"`
+}
+
+type geminiFuncResponse struct {
+	Name     string                 `json:"name"`
+	Response map[string]interface{} `json:"response"`
+}
+
+type geminiContent struct {
+	Parts []geminiPart `json:"parts"`
+	Role  string       `json:"role"`
+}
+
+// geminiMessages converts ChatRequest messages to Gemini's content format.
+func geminiMessages(req *core.ChatRequest) []geminiContent {
 	var contents []geminiContent
 	for _, m := range req.Messages {
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
+		switch {
+		case m.Role == "tool":
+			// Tool result → Gemini user message with functionResponse part
+			// ToolCallID carries the function name for Gemini round-trips
+			var response map[string]interface{}
+			if err := json.Unmarshal([]byte(m.Content), &response); err != nil {
+				response = map[string]interface{}{"result": m.Content}
+			}
+			contents = append(contents, geminiContent{
+				Role: "user",
+				Parts: []geminiPart{{
+					FunctionResponse: &geminiFuncResponse{
+						Name:     m.ToolCallID,
+						Response: response,
+					},
+				}},
+			})
+		case len(m.ToolCalls) > 0:
+			// Assistant with tool calls → Gemini model message with functionCall parts
+			var parts []geminiPart
+			for _, tc := range m.ToolCalls {
+				var args map[string]interface{}
+				_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+				if args == nil {
+					args = map[string]interface{}{}
+				}
+				parts = append(parts, geminiPart{
+					FunctionCall: &geminiFunctionCall{
+						Name: tc.Function.Name,
+						Args: args,
+					},
+				})
+			}
+			contents = append(contents, geminiContent{Role: "model", Parts: parts})
+		default:
+			role := m.Role
+			if role == "assistant" {
+				role = "model"
+			}
+			contents = append(contents, geminiContent{
+				Parts: []geminiPart{{Text: m.Content}},
+				Role:  role,
+			})
 		}
-		contents = append(contents, geminiContent{
-			Parts: []part{{Text: m.Content}},
-			Role:  role,
-		})
 	}
+	return contents
+}
 
+// geminiTools converts Tool definitions to Gemini's functionDeclarations format.
+func geminiTools(tools []core.Tool) []map[string]interface{} {
+	decls := make([]map[string]interface{}, len(tools))
+	for i, t := range tools {
+		decls[i] = map[string]interface{}{
+			"name":        t.Function.Name,
+			"description": t.Function.Description,
+			"parameters":  t.Function.Parameters,
+		}
+	}
+	return []map[string]interface{}{{"functionDeclarations": decls}}
+}
+
+func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	model := req.Model
 	if model == "" {
 		model = p.defaultModel
 	}
 
 	body := map[string]interface{}{
-		"contents": contents,
+		"contents": geminiMessages(req),
 	}
 	if req.System != "" {
 		body["systemInstruction"] = geminiContent{
-			Parts: []part{{Text: req.System}},
+			Parts: []geminiPart{{Text: req.System}},
+		}
+	}
+	if len(req.Tools) > 0 {
+		body["tools"] = geminiTools(req.Tools)
+		if req.ToolChoice != nil {
+			body["tool_config"] = req.ToolChoice
 		}
 	}
 
@@ -114,7 +188,6 @@ func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatR
 	if err != nil {
 		return nil, &core.ProviderError{Provider: "gemini", Message: err.Error(), Retryable: true, Cause: err}
 	}
-
 	if resp.StatusCode != http.StatusOK {
 		return nil, &core.ProviderError{Provider: "gemini", StatusCode: resp.StatusCode, Message: string(respBody), Retryable: resp.StatusCode >= 500 || resp.StatusCode == 429}
 	}
@@ -123,10 +196,12 @@ func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatR
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
-					Text string `json:"text"`
+					Text         string              `json:"text"`
+					FunctionCall *geminiFunctionCall `json:"functionCall"`
 				} `json:"parts"`
 				Role string `json:"role"`
 			} `json:"content"`
+			FinishReason string `json:"finishReason"`
 		} `json:"candidates"`
 		UsageMetadata struct {
 			PromptTokenCount     int `json:"promptTokenCount"`
@@ -137,22 +212,42 @@ func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatR
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, &core.ProviderError{Provider: "gemini", Message: err.Error(), Cause: err}
 	}
-
 	if len(result.Candidates) == 0 {
 		return nil, &core.ProviderError{Provider: "gemini", Message: "no candidates in response"}
 	}
 
 	var content string
+	var toolCalls []core.ToolCall
 	for _, part := range result.Candidates[0].Content.Parts {
-		content += part.Text
+		if part.FunctionCall != nil {
+			argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+			toolCalls = append(toolCalls, core.ToolCall{
+				// Gemini has no call ID; use function name so callers can round-trip via ToolCallID
+				ID:   part.FunctionCall.Name,
+				Type: "function",
+				Function: core.FunctionCall{
+					Name:      part.FunctionCall.Name,
+					Arguments: string(argsJSON),
+				},
+			})
+		} else {
+			content += part.Text
+		}
 	}
-	if content == "" {
-		return nil, &core.ProviderError{Provider: "gemini", Message: "empty content"}
+	if content == "" && len(toolCalls) == 0 {
+		return nil, &core.ProviderError{Provider: "gemini", Message: "empty response"}
+	}
+
+	finishReason := result.Candidates[0].FinishReason
+	if len(toolCalls) > 0 {
+		finishReason = "tool_calls"
 	}
 
 	return &core.ChatResponse{
-		Content: content,
-		Model:   model,
+		Content:      content,
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Model:        model,
 		Usage: core.Usage{
 			InputTokens:  result.UsageMetadata.PromptTokenCount,
 			OutputTokens: result.UsageMetadata.CandidatesTokenCount,
@@ -162,36 +257,23 @@ func (p *Provider) Chat(ctx context.Context, req *core.ChatRequest) (*core.ChatR
 }
 
 func (p *Provider) ChatStream(ctx context.Context, req *core.ChatRequest) (<-chan core.StreamChunk, error) {
-	type part struct {
-		Text string `json:"text"`
-	}
-	type geminiContent struct {
-		Parts []part `json:"parts"`
-		Role  string `json:"role"`
-	}
-	var contents []geminiContent
-	for _, m := range req.Messages {
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
-		}
-		contents = append(contents, geminiContent{
-			Parts: []part{{Text: m.Content}},
-			Role:  role,
-		})
-	}
-
 	model := req.Model
 	if model == "" {
 		model = p.defaultModel
 	}
 
 	body := map[string]interface{}{
-		"contents": contents,
+		"contents": geminiMessages(req),
 	}
 	if req.System != "" {
 		body["systemInstruction"] = geminiContent{
-			Parts: []part{{Text: req.System}},
+			Parts: []geminiPart{{Text: req.System}},
+		}
+	}
+	if len(req.Tools) > 0 {
+		body["tools"] = geminiTools(req.Tools)
+		if req.ToolChoice != nil {
+			body["tool_config"] = req.ToolChoice
 		}
 	}
 
@@ -246,7 +328,8 @@ func (p *Provider) ChatStream(ctx context.Context, req *core.ChatRequest) (<-cha
 				Candidates []struct {
 					Content struct {
 						Parts []struct {
-							Text string `json:"text"`
+							Text         string              `json:"text"`
+							FunctionCall *geminiFunctionCall `json:"functionCall"`
 						} `json:"parts"`
 					} `json:"content"`
 				} `json:"candidates"`
@@ -266,7 +349,25 @@ func (p *Provider) ChatStream(ctx context.Context, req *core.ChatRequest) (<-cha
 
 			if len(event.Candidates) > 0 {
 				for _, pt := range event.Candidates[0].Content.Parts {
-					if pt.Text != "" {
+					if pt.FunctionCall != nil {
+						argsJSON, _ := json.Marshal(pt.FunctionCall.Args)
+						select {
+						case ch <- core.StreamChunk{
+							Model: model,
+							ToolCalls: []core.ToolCall{{
+								ID:   pt.FunctionCall.Name,
+								Type: "function",
+								Function: core.FunctionCall{
+									Name:      pt.FunctionCall.Name,
+									Arguments: string(argsJSON),
+								},
+							}},
+							FinishReason: "tool_calls",
+						}:
+						case <-ctx.Done():
+							return
+						}
+					} else if pt.Text != "" {
 						select {
 						case ch <- core.StreamChunk{Content: pt.Text, Model: model}:
 						case <-ctx.Done():

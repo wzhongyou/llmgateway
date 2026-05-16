@@ -14,7 +14,7 @@ import (
 	"github.com/wzhongyou/llmgate/core"
 	"github.com/wzhongyou/llmgate/server"
 
-	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
+	_ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {

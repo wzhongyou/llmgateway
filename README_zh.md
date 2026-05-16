@@ -77,19 +77,18 @@ import (
 
     "github.com/wzhongyou/llmgate"
 
-    // 步骤一：blank import 注册 provider
-    _ "github.com/wzhongyou/llmgate/core/providers/deepseek"
-    _ "github.com/wzhongyou/llmgate/core/providers/glm"
+    // 一行 blank import 注册全部 21 个内置 provider
+    _ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
+    _ "github.com/wzhongyou/llmgate/core/providers/anthropic"
+    _ "github.com/wzhongyou/llmgate/core/providers/gemini"
 )
 
 func main() {
-    // 步骤二：创建 gateway（三选一）
     gw, err := llmgate.NewFromFile("llmgate.toml")
     if err != nil {
         panic(err)
     }
 
-    // 步骤三：对话
     ctx := context.Background()
     reply, err := gw.Chat(ctx, &llmgate.ChatRequest{
         Messages: []llmgate.Message{
@@ -124,23 +123,36 @@ reply, _ := gw.Fallback("anthropic", "deepseek").Chat(ctx, req)
 ch, err := gw.ChatStream(ctx, &llmgate.ChatRequest{
     Messages: []llmgate.Message{{Role: "user", Content: "你好"}},
 })
-if err != nil {
-    return
-}
 for chunk := range ch {
-    if chunk.Error != nil {
-        fmt.Println("stream error:", chunk.Error)
-        return
-    }
+    if chunk.Error != nil { break }
     fmt.Print(chunk.Content)
 }
+
+// 函数调用（Function Calling / Tool Use）
+reply, _ := gw.Chat(ctx, &llmgate.ChatRequest{
+    Messages: []llmgate.Message{{Role: "user", Content: "北京今天天气怎么样？"}},
+    Tools: []llmgate.Tool{{
+        Type: "function",
+        Function: llmgate.ToolFunction{
+            Name:        "get_weather",
+            Description: "获取指定城市的当前天气",
+            Parameters: map[string]interface{}{
+                "type": "object",
+                "properties": map[string]interface{}{
+                    "city": map[string]interface{}{"type": "string"},
+                },
+                "required": []string{"city"},
+            },
+        },
+    }},
+    ToolChoice: "auto",
+})
+// reply.ToolCalls 包含模型决定调用的工具
+// reply.FinishReason == "tool_calls"
 
 // 指标
 snap := gw.Snapshot()
 fmt.Printf("DeepSeek 延迟: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs)
-
-// 自定义策略（需要 import core）
-// gw.UseStrategy(&core.PrimaryFirstStrategy{...})
 ```
 
 **优先级（从高到低）：**
@@ -165,13 +177,10 @@ go run examples/server/main.go
 [[providers]]
 name = "glm"
 key = "${GLM_KEY}"
-default_model = "glm-5.1"
-# base_url = "https://open.bigmodel.cn/api/paas/v4"
 
 [[providers]]
 name = "deepseek"
 key = "${DEEPSEEK_KEY}"
-default_model = "deepseek-v4-flash"
 
 [strategy]
 primary = "glm"
@@ -183,7 +192,7 @@ listen_addr = ":8080"
 ```
 
 接口：
-- `POST /v1/chat` — 对话（支持 `?provider=` / `?fallback=` 查询参数）
+- `POST /v1/chat` — 对话，支持函数调用（可选 `?provider=` / `?fallback=` 查询参数）
 - `GET /v1/models` — 可用模型列表
 - `GET /health` — 健康检查
 
@@ -191,7 +200,7 @@ listen_addr = ":8080"
 
 ## 可观测性
 
-每次 `/v1/chat` 请求输出一条结构化 JSON 日志，包含性能、Token 明细全部关键字段：
+每次 `/v1/chat` 请求输出一条结构化 JSON 日志：
 
 ```json
 {"time":"...","level":"INFO","msg":"request",
@@ -201,7 +210,7 @@ listen_addr = ":8080"
  "input_tokens":15,"output_tokens":42,"reasoning_tokens":0}
 ```
 
-Server 模式下注入自定义 logger：
+注入自定义 logger：
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -215,23 +224,38 @@ srv, _ := server.New(cfg, server.WithLogger(logger))
 | 供应商 | 协议 | 默认模型 |
 |--------|------|----------|
 | Anthropic (Claude) | Anthropic Messages API | `claude-sonnet-4-6` |
+| 百川（Baichuan） | OpenAI 兼容 | `Baichuan4` |
 | 百度（文心 ERNIE） | OpenAI 兼容 | `ernie-5.1` |
+| 字节跳动（豆包） | OpenAI 兼容 | `doubao-seed-1.6-250615` |
 | DeepSeek | OpenAI 兼容 | `deepseek-v4-flash` |
 | Google (Gemini) | Gemini generateContent | `gemini-3.1-flash` |
+| Groq | OpenAI 兼容 | `llama-3.3-70b-versatile` |
 | Meta (Llama) | OpenAI 兼容 | `llama-4-maverick` |
 | MiniMax | OpenAI 兼容 | `MiniMax-M2.7` |
+| Mistral | OpenAI 兼容 | `mistral-large-latest` |
 | 月之暗面（Kimi） | OpenAI 兼容 | `kimi-k2.6` |
 | OpenAI | OpenAI 兼容 | `gpt-5.5` |
 | 阿里百炼（通义千问） | OpenAI 兼容 | `qwen3.6-plus` |
+| SiliconFlow | OpenAI 兼容 | `Qwen/Qwen2.5-72B-Instruct` |
 | 阶跃星辰（StepFun） | OpenAI 兼容 | `step-3.5-flash` |
 | 腾讯（混元） | OpenAI 兼容 | `hy3-preview` |
+| Together AI | OpenAI 兼容 | `meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo` |
 | xAI (Grok) | OpenAI 兼容 | `grok-4.1-fast-non-reasoning` |
 | 小米（MiMo） | OpenAI 兼容 | `mimo-v2-pro` |
+| 零一万物（Yi） | OpenAI 兼容 | `yi-large` |
 | 智谱（GLM） | OpenAI 兼容 | `glm-5.1` |
 
-**3 套协议**：OpenAI 兼容（12 个供应商）、Anthropic Messages、Gemini generateContent。
+**3 套协议**：OpenAI 兼容（19 家）、Anthropic Messages、Gemini generateContent。
 
-所有供应商均支持 `base_url` 覆盖，用于代理、私有部署或第三方转售。
+所有供应商均支持 `base_url` 覆盖。无需写代码即可接入任意 OpenAI 兼容的供应商：
+
+```toml
+[[providers]]
+name = "my-provider"
+key = "${MY_PROVIDER_KEY}"
+base_url = "https://api.my-provider.com/v1"
+protocol = "openai-compat"
+```
 
 ---
 
@@ -240,6 +264,10 @@ srv, _ := server.New(cfg, server.WithLogger(logger))
 ```
 llmgate/
 ├── core/                 # Provider 接口、引擎、策略、指标
+│   └── providers/
+│       ├── openaicompat/ # 全部 19 个 OpenAI 兼容 provider（数据驱动）
+│       ├── anthropic/    # Anthropic Messages API
+│       └── gemini/       # Gemini generateContent API
 ├── sdk/                  # Go SDK
 ├── server/               # HTTP 服务
 ├── docs/                 # 设计文档
@@ -270,21 +298,26 @@ go test ./sdk/ ./server/ -v -count=1
 - [x] **v0.2** — 智谱（GLM）+ MiniMax + 结构化日志（slog）
 - [x] **v0.3** — 14 家供应商 / 3 套协议全覆盖，推理 token 追踪，默认模型可配置
 - [x] **v1.0** — Streaming（SSE）+ 生产级路由策略（熔断、限流、重试）
+- [x] **v1.1** — 函数调用（Tool Use）全协议支持；21 家供应商；数据驱动架构
 - [ ] **v1.5** — 可视化控制台：延迟分布、Prompt 版本管理、模型对比评估
 
 ---
 
 ## 新增 Provider
 
-1. 实现 `Provider` 接口（参考 [adapter-template.md](docs/adapter-template.md)）
-2. 通过 `init()` 注册:
-   ```go
-   func init() {
-       core.RegisterProvider("name", factory)
-   }
-   ```
-3. 在 `sdk/gateway.go` 的 env map 中添加对应条目
-4. 提 PR 并附上测试
+**OpenAI 兼容协议** — 在 [core/providers/openaicompat/builtins.go](core/providers/openaicompat/builtins.go) 的 `builtins` 表里加一行：
+
+```go
+{
+    name:         "myprovider",
+    baseURL:      "https://api.myprovider.com/v1",
+    defaultModel: "my-model",
+    models:       []string{"my-model"},
+    envVar:       "MYPROVIDER_KEY",
+},
+```
+
+**自定义协议** — 实现 `Provider` 接口，参考 [adapter-template.md](docs/adapter-template.md)。
 
 ---
 

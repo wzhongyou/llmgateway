@@ -77,19 +77,18 @@ import (
 
     "github.com/wzhongyou/llmgate"
 
-    // Step 1: blank-import providers to register them
-    _ "github.com/wzhongyou/llmgate/core/providers/deepseek"
-    _ "github.com/wzhongyou/llmgate/core/providers/glm"
+    // One blank import registers all 21 built-in providers
+    _ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
+    _ "github.com/wzhongyou/llmgate/core/providers/anthropic"
+    _ "github.com/wzhongyou/llmgate/core/providers/gemini"
 )
 
 func main() {
-    // Step 2: create gateway (pick one)
     gw, err := llmgate.NewFromFile("llmgate.toml")
     if err != nil {
         panic(err)
     }
 
-    // Step 3: chat
     ctx := context.Background()
     reply, err := gw.Chat(ctx, &llmgate.ChatRequest{
         Messages: []llmgate.Message{
@@ -124,23 +123,36 @@ reply, _ := gw.Fallback("anthropic", "deepseek").Chat(ctx, req)
 ch, err := gw.ChatStream(ctx, &llmgate.ChatRequest{
     Messages: []llmgate.Message{{Role: "user", Content: "Hello"}},
 })
-if err != nil {
-    return
-}
 for chunk := range ch {
-    if chunk.Error != nil {
-        fmt.Println("stream error:", chunk.Error)
-        return
-    }
+    if chunk.Error != nil { break }
     fmt.Print(chunk.Content)
 }
+
+// Function calling (tool use)
+reply, _ := gw.Chat(ctx, &llmgate.ChatRequest{
+    Messages: []llmgate.Message{{Role: "user", Content: "What's the weather in Beijing?"}},
+    Tools: []llmgate.Tool{{
+        Type: "function",
+        Function: llmgate.ToolFunction{
+            Name:        "get_weather",
+            Description: "Get current weather for a city",
+            Parameters: map[string]interface{}{
+                "type": "object",
+                "properties": map[string]interface{}{
+                    "city": map[string]interface{}{"type": "string"},
+                },
+                "required": []string{"city"},
+            },
+        },
+    }},
+    ToolChoice: "auto",
+})
+// reply.ToolCalls contains the model's tool invocation
+// reply.FinishReason == "tool_calls"
 
 // Metrics
 snap := gw.Snapshot()
 fmt.Printf("DeepSeek latency: %.2f ms\n", snap.Providers["deepseek"].AvgLatencyMs)
-
-// Custom strategy (requires importing core)
-// gw.UseStrategy(&core.PrimaryFirstStrategy{...})
 ```
 
 **Precedence (highest to lowest):**
@@ -165,13 +177,10 @@ go run examples/server/main.go
 [[providers]]
 name = "glm"
 key = "${GLM_KEY}"
-default_model = "glm-5.1"
-# base_url = "https://open.bigmodel.cn/api/paas/v4"
 
 [[providers]]
 name = "deepseek"
 key = "${DEEPSEEK_KEY}"
-default_model = "deepseek-v4-flash"
 
 [strategy]
 primary = "glm"
@@ -183,7 +192,7 @@ listen_addr = ":8080"
 ```
 
 Endpoints:
-- `POST /v1/chat` — chat completion (optional `?provider=` / `?fallback=` query params)
+- `POST /v1/chat` — chat completion (supports function calling; optional `?provider=` / `?fallback=` query params)
 - `GET /v1/models` — list available models
 - `GET /health` — health check
 
@@ -191,7 +200,7 @@ Endpoints:
 
 ## Observability
 
-Every `/v1/chat` request emits one structured JSON log line capturing performance and token breakdown:
+Every `/v1/chat` request emits one structured JSON log line:
 
 ```json
 {"time":"...","level":"INFO","msg":"request",
@@ -201,7 +210,7 @@ Every `/v1/chat` request emits one structured JSON log line capturing performanc
  "input_tokens":15,"output_tokens":42,"reasoning_tokens":0}
 ```
 
-Inject a custom logger in Gateway mode:
+Inject a custom logger:
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -215,23 +224,38 @@ srv, _ := server.New(cfg, server.WithLogger(logger))
 | Provider | Protocol | Default Model |
 |----------|----------|---------------|
 | Anthropic (Claude) | Anthropic Messages API | `claude-sonnet-4-6` |
+| Baichuan | OpenAI-compatible | `Baichuan4` |
 | Baidu (ERNIE) | OpenAI-compatible | `ernie-5.1` |
+| ByteDance (Doubao) | OpenAI-compatible | `doubao-seed-1.6-250615` |
 | DeepSeek | OpenAI-compatible | `deepseek-v4-flash` |
 | Google (Gemini) | Gemini generateContent | `gemini-3.1-flash` |
+| Groq | OpenAI-compatible | `llama-3.3-70b-versatile` |
 | Meta (Llama) | OpenAI-compatible | `llama-4-maverick` |
 | MiniMax | OpenAI-compatible | `MiniMax-M2.7` |
+| Mistral | OpenAI-compatible | `mistral-large-latest` |
 | Moonshot (Kimi) | OpenAI-compatible | `kimi-k2.6` |
 | OpenAI | OpenAI-compatible | `gpt-5.5` |
 | Qwen (Alibaba Bailian) | OpenAI-compatible | `qwen3.6-plus` |
+| SiliconFlow | OpenAI-compatible | `Qwen/Qwen2.5-72B-Instruct` |
 | StepFun | OpenAI-compatible | `step-3.5-flash` |
 | Tencent (Hunyuan) | OpenAI-compatible | `hy3-preview` |
+| Together AI | OpenAI-compatible | `meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo` |
 | xAI (Grok) | OpenAI-compatible | `grok-4.1-fast-non-reasoning` |
 | Xiaomi (MiMo) | OpenAI-compatible | `mimo-v2-pro` |
+| Yi (01.AI) | OpenAI-compatible | `yi-large` |
 | Zhipu (GLM) | OpenAI-compatible | `glm-5.1` |
 
-**3 protocol families**: OpenAI-compatible (12 providers), Anthropic Messages, Gemini generateContent.
+**3 protocol families**: OpenAI-compatible (19 providers), Anthropic Messages, Gemini generateContent.
 
-All providers support `base_url` override for proxies, private deployments, or third-party resellers.
+All providers support `base_url` override. To add any other OpenAI-compatible provider without writing code, use `protocol = "openai-compat"` in config:
+
+```toml
+[[providers]]
+name = "my-provider"
+key = "${MY_PROVIDER_KEY}"
+base_url = "https://api.my-provider.com/v1"
+protocol = "openai-compat"
+```
 
 ---
 
@@ -239,11 +263,15 @@ All providers support `base_url` override for proxies, private deployments, or t
 
 ```
 llmgate/
-├── core/        # Provider interface, engine, strategies, metrics
-├── sdk/         # Go SDK
-├── server/      # HTTP server
-├── docs/        # Design docs
-└── examples/    # Usage examples
+├── core/                 # Provider interface, engine, strategies, metrics
+│   └── providers/
+│       ├── openaicompat/ # All 19 OpenAI-compatible providers (data-driven)
+│       ├── anthropic/    # Anthropic Messages API
+│       └── gemini/       # Gemini generateContent API
+├── sdk/                  # Go SDK
+├── server/               # HTTP server
+├── docs/                 # Design docs
+└── examples/             # Usage examples
 ```
 
 ---
@@ -270,21 +298,26 @@ Tests skip automatically if no key is configured.
 - [x] **v0.2** — Zhipu (GLM) + MiniMax + structured logging (slog)
 - [x] **v0.3** — 14 providers across 3 protocols, reasoning tokens, configurable default models
 - [x] **v1.0** — Streaming (SSE) + production routing (circuit breaking, rate limiting, retry)
+- [x] **v1.1** — Function calling (tool use) across all providers; 21 providers; data-driven provider architecture
 - [ ] **v1.5** — Visual console: latency distribution, prompt version management, model evaluation
 
 ---
 
 ## Adding a Provider
 
-1. Implement the `Provider` interface (see [adapter-template.md](docs/adapter-template.md))
-2. Register via `init()`:
-   ```go
-   func init() {
-       core.RegisterProvider("name", factory)
-   }
-   ```
-3. Add to the env-var map in `sdk/gateway.go`
-4. Send a PR with tests
+**For OpenAI-compatible APIs** — add one entry to the `builtins` table in [core/providers/openaicompat/builtins.go](core/providers/openaicompat/builtins.go):
+
+```go
+{
+    name:         "myprovider",
+    baseURL:      "https://api.myprovider.com/v1",
+    defaultModel: "my-model",
+    models:       []string{"my-model"},
+    envVar:       "MYPROVIDER_KEY",
+},
+```
+
+**For custom API formats** — implement the `Provider` interface (see [adapter-template.md](docs/adapter-template.md)).
 
 ---
 

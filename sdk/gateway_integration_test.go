@@ -6,9 +6,7 @@ import (
 
 	"github.com/wzhongyou/llmgate"
 
-	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
-	_ "github.com/wzhongyou/llmgate/core/providers/glm"
-	_ "github.com/wzhongyou/llmgate/core/providers/minimax"
+	_ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
 )
 
 // requireProvider skips the test if the named provider is not configured.

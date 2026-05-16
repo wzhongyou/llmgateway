@@ -9,21 +9,9 @@ import (
 
 	"github.com/wzhongyou/llmgate/server"
 
-	// Register built-in providers
 	_ "github.com/wzhongyou/llmgate/core/providers/anthropic"
-	_ "github.com/wzhongyou/llmgate/core/providers/deepseek"
-	_ "github.com/wzhongyou/llmgate/core/providers/ernie"
 	_ "github.com/wzhongyou/llmgate/core/providers/gemini"
-	_ "github.com/wzhongyou/llmgate/core/providers/glm"
-	_ "github.com/wzhongyou/llmgate/core/providers/grok"
-	_ "github.com/wzhongyou/llmgate/core/providers/hunyuan"
-	_ "github.com/wzhongyou/llmgate/core/providers/kimi"
-	_ "github.com/wzhongyou/llmgate/core/providers/llama"
-	_ "github.com/wzhongyou/llmgate/core/providers/mimo"
-	_ "github.com/wzhongyou/llmgate/core/providers/minimax"
-	_ "github.com/wzhongyou/llmgate/core/providers/openai"
-	_ "github.com/wzhongyou/llmgate/core/providers/qwen"
-	_ "github.com/wzhongyou/llmgate/core/providers/stepfun"
+	_ "github.com/wzhongyou/llmgate/core/providers/openaicompat"
 )
 
 // go run ./examples/server

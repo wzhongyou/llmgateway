@@ -17,6 +17,15 @@ func OpenAIStream(ctx context.Context, body io.ReadCloser) <-chan StreamChunk {
 		defer close(ch)
 		defer body.Close()
 
+		type toolCallDelta struct {
+			index    int
+			id       string
+			callType string
+			name     string
+			args     strings.Builder
+		}
+		var toolAccs []*toolCallDelta
+
 		scanner := bufio.NewScanner(body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -25,14 +34,24 @@ func OpenAIStream(ctx context.Context, body io.ReadCloser) <-chan StreamChunk {
 			}
 			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
-				return
+				break
 			}
 
 			var event struct {
 				Choices []struct {
 					Delta struct {
-						Content string `json:"content"`
+						Content   string `json:"content"`
+						ToolCalls []struct {
+							Index    int    `json:"index"`
+							ID       string `json:"id"`
+							Type     string `json:"type"`
+							Function struct {
+								Name      string `json:"name"`
+								Arguments string `json:"arguments"`
+							} `json:"function"`
+						} `json:"tool_calls"`
 					} `json:"delta"`
+					FinishReason *string `json:"finish_reason"`
 				} `json:"choices"`
 				Model string `json:"model"`
 				Usage *struct {
@@ -56,8 +75,29 @@ func OpenAIStream(ctx context.Context, body io.ReadCloser) <-chan StreamChunk {
 				continue
 			}
 
+			delta := event.Choices[0].Delta
+
+			// Accumulate tool call deltas indexed by tool_calls[].index
+			for _, tc := range delta.ToolCalls {
+				idx := tc.Index
+				for len(toolAccs) <= idx {
+					toolAccs = append(toolAccs, &toolCallDelta{index: len(toolAccs)})
+				}
+				acc := toolAccs[idx]
+				if tc.ID != "" {
+					acc.id = tc.ID
+				}
+				if tc.Type != "" {
+					acc.callType = tc.Type
+				}
+				if tc.Function.Name != "" {
+					acc.name = tc.Function.Name
+				}
+				acc.args.WriteString(tc.Function.Arguments)
+			}
+
 			sc := StreamChunk{
-				Content: event.Choices[0].Delta.Content,
+				Content: delta.Content,
 				Model:   event.Model,
 			}
 			if event.Usage != nil {
@@ -73,16 +113,42 @@ func OpenAIStream(ctx context.Context, body io.ReadCloser) <-chan StreamChunk {
 				}
 			}
 
-			select {
-			case ch <- sc:
-			case <-ctx.Done():
-				return
+			if sc.Content != "" || sc.Usage != nil {
+				select {
+				case ch <- sc:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
 			select {
 			case ch <- StreamChunk{Error: err}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		// Emit accumulated tool calls as final chunk
+		if len(toolAccs) > 0 {
+			calls := make([]ToolCall, len(toolAccs))
+			for i, acc := range toolAccs {
+				callType := acc.callType
+				if callType == "" {
+					callType = "function"
+				}
+				calls[i] = ToolCall{
+					ID:   acc.id,
+					Type: callType,
+					Function: FunctionCall{
+						Name:      acc.name,
+						Arguments: acc.args.String(),
+					},
+				}
+			}
+			select {
+			case ch <- StreamChunk{ToolCalls: calls, FinishReason: "tool_calls"}:
 			case <-ctx.Done():
 			}
 		}

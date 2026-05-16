@@ -42,23 +42,7 @@ func NewFromFile(path string) (*Gateway, error) {
 }
 
 func (g *Gateway) loadEnv() {
-	envProviders := map[string]string{
-		"ANTHROPIC_KEY": "anthropic",
-		"DEEPSEEK_KEY":  "deepseek",
-		"ERNIE_KEY":     "ernie",
-		"GEMINI_KEY":    "gemini",
-		"GLM_KEY":       "glm",
-		"GROK_KEY":      "grok",
-		"HUNYUAN_KEY":   "hunyuan",
-		"KIMI_KEY":      "kimi",
-		"LLAMA_KEY":     "llama",
-		"MIMO_KEY":      "mimo",
-		"MINIMAX_KEY":   "minimax",
-		"OPENAI_KEY":    "openai",
-		"QWEN_KEY":      "qwen",
-		"STEPFUN_KEY":   "stepfun",
-	}
-	for env, name := range envProviders {
+	for env, name := range core.EnvProviders() {
 		if key := os.Getenv(env); key != "" {
 			cfg := core.ProviderConfig{Name: name, Key: key}
 			if p, err := g.engine.CreateProvider(cfg); err == nil {
