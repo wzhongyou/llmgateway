@@ -44,17 +44,25 @@ cp llmgate.toml.example llmgate.toml
 # edit the key field
 ```
 
+```go
+gw, err := llmgate.NewFromFile("llmgate.toml")
+```
+
 **Option 2 — Environment variable**
 
 ```bash
 export DEEPSEEK_KEY="sk-xxx"
 export GLM_KEY="your-glm-key"
-export MINIMAX_KEY="your-minimax-key"
+```
+
+```go
+gw := llmgate.New()  // auto-loads from env vars
 ```
 
 **Option 3 — Code**
 
 ```go
+gw := llmgate.New()
 gw.Use("deepseek", "sk-xxx")
 ```
 
@@ -69,15 +77,19 @@ import (
 
     "github.com/wzhongyou/llmgate"
 
-    // Register built-in providers
+    // Step 1: blank-import providers to register them
     _ "github.com/wzhongyou/llmgate/core/providers/deepseek"
     _ "github.com/wzhongyou/llmgate/core/providers/glm"
 )
 
 func main() {
-    // Auto-loads from llmgate.toml or env vars
-    gw := llmgate.New()
+    // Step 2: create gateway (pick one)
+    gw, err := llmgate.NewFromFile("llmgate.toml")
+    if err != nil {
+        panic(err)
+    }
 
+    // Step 3: chat
     ctx := context.Background()
     reply, err := gw.Chat(ctx, &llmgate.ChatRequest{
         Messages: []llmgate.Message{
@@ -112,8 +124,14 @@ reply, _ := gw.Fallback("anthropic", "deepseek").Chat(ctx, req)
 ch, err := gw.ChatStream(ctx, &llmgate.ChatRequest{
     Messages: []llmgate.Message{{Role: "user", Content: "Hello"}},
 })
+if err != nil {
+    return
+}
 for chunk := range ch {
-    if chunk.Error != nil { break }
+    if chunk.Error != nil {
+        fmt.Println("stream error:", chunk.Error)
+        return
+    }
     fmt.Print(chunk.Content)
 }
 

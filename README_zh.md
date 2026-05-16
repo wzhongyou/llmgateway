@@ -44,17 +44,25 @@ cp llmgate.toml.example llmgate.toml
 # 编辑 key 字段
 ```
 
+```go
+gw, err := llmgate.NewFromFile("llmgate.toml")
+```
+
 **方式二 — 环境变量**
 
 ```bash
 export DEEPSEEK_KEY="sk-xxx"
 export GLM_KEY="your-glm-key"
-export MINIMAX_KEY="your-minimax-key"
+```
+
+```go
+gw := llmgate.New()  // 自动从环境变量加载
 ```
 
 **方式三 — 代码**
 
 ```go
+gw := llmgate.New()
 gw.Use("deepseek", "sk-xxx")
 ```
 
@@ -69,15 +77,19 @@ import (
 
     "github.com/wzhongyou/llmgate"
 
-    // 注册内置 provider
+    // 步骤一：blank import 注册 provider
     _ "github.com/wzhongyou/llmgate/core/providers/deepseek"
     _ "github.com/wzhongyou/llmgate/core/providers/glm"
 )
 
 func main() {
-    // 自动从 llmgate.toml 或环境变量加载配置
-    gw := llmgate.New()
+    // 步骤二：创建 gateway（三选一）
+    gw, err := llmgate.NewFromFile("llmgate.toml")
+    if err != nil {
+        panic(err)
+    }
 
+    // 步骤三：对话
     ctx := context.Background()
     reply, err := gw.Chat(ctx, &llmgate.ChatRequest{
         Messages: []llmgate.Message{
@@ -112,8 +124,14 @@ reply, _ := gw.Fallback("anthropic", "deepseek").Chat(ctx, req)
 ch, err := gw.ChatStream(ctx, &llmgate.ChatRequest{
     Messages: []llmgate.Message{{Role: "user", Content: "你好"}},
 })
+if err != nil {
+    return
+}
 for chunk := range ch {
-    if chunk.Error != nil { break }
+    if chunk.Error != nil {
+        fmt.Println("stream error:", chunk.Error)
+        return
+    }
     fmt.Print(chunk.Content)
 }
 
