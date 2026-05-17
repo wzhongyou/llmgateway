@@ -37,3 +37,7 @@ config.local.*
 
 # Research notes — local only, not published
 /research/
+
+# Localized docs (not committed)
+docs/*_zh.md
+README_zh.md
